@@ -75,13 +75,18 @@ MCUFRIEND_kbv tft;
 double Temp;
 double HeatTime;
 double TargetTemp;
-double Kp = 0.15;
+double Ku = 0.3;
+double Tu = 127;
+double Kp = 0.6 * Ku;
+double Ki = Tu / 2;
+double Kd = Tu / 16;
+/*double Kp = 0.3;
 double Ki = 0;
-double Kd = 0;
+double Kd = 0;*/
 PID TempPID(&Temp, &HeatTime, &TargetTemp, Kp, Ki, Kd, P_ON_E, DIRECT);
 
 // Temperature tracking
-#define TEMPTRACKWINDOW 300
+#define TEMPTRACKWINDOW 600
 double SSxx;
 double SSxy;
 double MeanTemp;
@@ -121,7 +126,7 @@ void updLinReg(double newTemp, double newMilli) {
   MeanTime = MeanTime + (newMilli - OldTemps[0][0]) / 20;
 
   SSxx = SSxx + (newMilli * newMilli - 20 * MeanTime * MeanTime);
-  SSxy = SSxy + (newTemp * newMilli - REGULARFONTWIDTH * MeanTime * MeanTemp);
+  SSxy = SSxy + (newTemp * newMilli - 20 * MeanTime * MeanTemp);
 
   for (int i = 0; i < TEMPTRACKWINDOW - 1; i++) {
     OldTemps[0][i] = OldTemps[0][i+1];
