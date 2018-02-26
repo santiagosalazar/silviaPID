@@ -98,6 +98,7 @@ int WaitTime = 2;
 int PreInfBrewTime = 28;
 
 int WindowLength = 1000;
+// Brew settings
 bool PreInfuse = false;
 bool Purge = false;
 bool Brewing = false;
