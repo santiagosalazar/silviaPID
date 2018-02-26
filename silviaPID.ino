@@ -75,8 +75,13 @@ MCUFRIEND_kbv tft;
 double Temp;
 double HeatTime;
 double TargetTemp;
-double Kp = 0.15;
-double Ki = 0;
+double Ku = 0.3;
+double Tu = 0;//127;
+double Kp = 0.6 * Ku;
+double Ki = Tu / 1.2;
+//double Kd = Tu / 16;
+/*double Kp = 0.3;
+double Ki = 0;*/
 double Kd = 0;
 PID TempPID(&Temp, &HeatTime, &TargetTemp, Kp, Ki, Kd, P_ON_E, DIRECT);
 
@@ -122,7 +127,7 @@ void updLinReg(double newTemp, double newMilli) {
   MeanTime = MeanTime + (newMilli - OldTemps[0][0]) / 20;
 
   SSxx = SSxx + (newMilli * newMilli - 20 * MeanTime * MeanTime);
-  SSxy = SSxy + (newTemp * newMilli - REGULARFONTWIDTH * MeanTime * MeanTemp);
+  SSxy = SSxy + (newTemp * newMilli - 20 * MeanTime * MeanTemp);
 
   for (int i = 0; i < TEMPTRACKWINDOW - 1; i++) {
     OldTemps[0][i] = OldTemps[0][i+1];
@@ -311,17 +316,14 @@ void dispInfo() {
   Serial.println(PreInfuse);
   Serial.print("Brewing: ");
   Serial.println(Brewing);
-
-
   Serial.print("Frames per Window: ");
   Serial.println(WindowFrames);
-  
+  Serial.print("target Temp: ");
+  Serial.println(TargetTemp);
   Serial.print("Brew Switch: ");
   Serial.println(digitalRead(BREW_PIN));
   Serial.print("Steam Switch: ");
   Serial.println(digitalRead(STEAM_PIN));
-  Serial.print("Target Temp: ");
-  Serial.println(TargetTemp);
   Serial.println();*/
 }
 // monitor machine switch states
