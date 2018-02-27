@@ -1,49 +1,9 @@
-#include <PID_v1.h>
-#include <Adafruit_GFX.h>
-#include <Adafruit_TFTLCD.h>
-#include <TouchScreen.h>
-#include <MCUFRIEND_kbv.h>
-#include <Fonts/FreeMonoBold18pt7b.h>
-#include <Fonts/FreeMonoBold24pt7b.h>
+#include </home/santiago/Arduino/silviaPID/silviaPID.h>
 
-#define TITLEFONT FreeMonoBold24pt7b
-#define TITLEFONTWIDTH 27 
-#define REGULARFONT FreeMonoBold18pt7b
-#define REGULARFONTWIDTH 21
-
-// Pin declarations
-#define TEMP_PIN A15
-#define HEAT_PIN 53
-#define PUMP_PIN 52
-#define VALVE_PIN 51
-#define STEAM_PIN 28
-#define BREW_PIN 29
-
-// Touch screen declarations
-#define YP A2
-#define XM A3
-#define YM 8
-#define XP 9
-
-#define TS_MINX 130
-#define TS_MAXX 905
-#define TS_MINY 75
-#define TS_MAXY 930
-
+// Touch Screen declaration
 TouchScreen ts = TouchScreen(XP, YP, XM, YM, 300);
-
-#define MINPRESSURE 100
-#define MAXPRESSURE 1000
-
-// LCD declarations
-#define LCD_CS A3
-#define LCD_CD A2
-#define LCD_WR A1
-#define LCD_RD A0
-#define LCD_RESET A4
-
-#define BOXSIZE 40
-#define PENRADIUS 2
+// RTC Clock declaration RTC(CE, IO, CLK)
+DS1302RTC RTC(RTC_CE,RTC_IO,RTC_CLK);
 
 // Keeps track of the current screen
 // Home screen          1
@@ -55,21 +15,6 @@ unsigned short CurrentScreen = 0;
 
 // Kuman LCD TFT library
 MCUFRIEND_kbv tft; 
-
-// Default colour values
-#define	BLACK   0x0000
-#define	BLUE    0x001F
-#define	RED     0xF800
-#define	PURPLE   0x07E0
-#define CYAN    0x07FF
-#define GREEN 0xF81F
-#define YELLOW  0xFFE0
-#define WHITE   0xFFFF
-
-#define BACKGROUND 0X1EBC
-#define BORDER 0X4179
-#define TEXTONE 0xFA80
-#define TEXTTWO 0x0000
 
 // PID algorithm variables
 double Temp;
@@ -91,18 +36,20 @@ double SSxx;
 double SSxy;
 double MeanTemp;
 double MeanTime;
-double OldTemps[2][TEMPTRACKWINDOW];
-double PrevTemp;
+double TempLog[2][TEMPTRACKWINDOW];
+double InstTemp;
+unsigned long PrevTempRead;
 
 // Program Settings
-int SteamTemp = 155;
-int BrewTemp = 120;
-int BrewTime = 28;
-int PreInfTime = 1;
-int WaitTime = 2;
-int PreInfBrewTime = 28;
+unsigned int SteamTemp = 155;
+unsigned int BrewTemp = 120;
+unsigned int BrewMillis = 28000;
+unsigned int PreInfMillis = 1000;
+unsigned int WaitMillis = 2000;
+unsigned int PreInfBrewMillis = 28;
+unsigned int WindowLength = 1000;
+unsigned int TempWindow = 1000;
 
-int WindowLength = 1000;
 // Brew settings
 bool PreInfuse = false;
 bool Purge = false;
@@ -110,7 +57,6 @@ bool Brewing = false;
 bool RegularBrew = false;
 
 // Time tracking
-unsigned long StartMillis;
 unsigned long PreviousMillis;
 unsigned long BrewStartMillis;
 unsigned int BrewElapsedSeconds;
@@ -120,22 +66,22 @@ unsigned int WindowFrames;
 // FUNCTION DECLARATIONS
 // *********************
 void updLinReg(double newTemp, double newMilli) {
-  SSxx = SSxx - (OldTemps[0][0] * OldTemps[0][0] - 20 * MeanTime * MeanTime);
-  SSxy = SSxy - (OldTemps[1][0] * OldTemps[0][0] - 20 * MeanTemp * MeanTime);
+  SSxx = SSxx - (TempLog[0][0] * TempLog[0][0] - 20 * MeanTime * MeanTime);
+  SSxy = SSxy - (TempLog[1][0] * TempLog[0][0] - 20 * MeanTemp * MeanTime);
 
-  MeanTemp = MeanTemp + (newTemp - OldTemps[1][0]) / 20;
-  MeanTime = MeanTime + (newMilli - OldTemps[0][0]) / 20;
+  MeanTemp = MeanTemp + (newTemp - TempLog[1][0]) / 20;
+  MeanTime = MeanTime + (newMilli - TempLog[0][0]) / 20;
 
   SSxx = SSxx + (newMilli * newMilli - 20 * MeanTime * MeanTime);
   SSxy = SSxy + (newTemp * newMilli - 20 * MeanTime * MeanTemp);
 
   for (int i = 0; i < TEMPTRACKWINDOW - 1; i++) {
-    OldTemps[0][i] = OldTemps[0][i+1];
-    OldTemps[1][i] = OldTemps[1][i+1];
+    TempLog[0][i] = TempLog[0][i+1];
+    TempLog[1][i] = TempLog[1][i+1];
   }
 
-  OldTemps[0][TEMPTRACKWINDOW - 1] = newMilli;
-  OldTemps[1][TEMPTRACKWINDOW - 1] = newTemp;
+  TempLog[0][TEMPTRACKWINDOW - 1] = newMilli;
+  TempLog[1][TEMPTRACKWINDOW - 1] = newTemp;
 }
 
 // compute temperature and write to Temp
@@ -342,18 +288,18 @@ void switchInput() {
   }
 }
 // check time and turn on heater / reset window
-void windowRenewCheck() {
+void renewWindowCheck() {
   unsigned long elapsedMillis = millis() - PreviousMillis;
   if (elapsedMillis >= WindowLength) {
     dispInfo();
     switch (CurrentScreen) {
         case 1:
         case 5:
-          if ((int) Temp != (int) PrevTemp && elapsedMillis < 1.2 * WindowLength) {
+          if ((int) Temp != (int) InstTemp && elapsedMillis < 1.2 * WindowLength) {
               tft.setTextSize(2);
               tft.setFont(&TITLEFONT);
-              refreshNumber(Temp, PrevTemp, 3, 2, 5.5, 2 * TITLEFONTWIDTH, true);
-              PrevTemp = Temp;
+              refreshNumber(Temp, InstTemp, 3, 2, 5.5, 2 * TITLEFONTWIDTH, true);
+              InstTemp = Temp;
           }
           break;
     }
@@ -402,32 +348,32 @@ void endBrew() {
 }
 // controls timing for brew
 void brewCheck() {
-  unsigned long elapsedTime = (millis() - BrewStartMillis) / 1000;
+  unsigned long elapsedMillis = millis() - BrewStartMillis;
   if (Purge) { 
-      if (elapsedTime >= 2){
+      if (elapsedMillis >= 2000){
           endBrew();
       }
   } 
   // pre infusion timing
   else if (PreInfuse) {
-    if (elapsedTime >= PreInfTime + WaitTime + BrewTime) {
+    if (elapsedMillis >= PreInfMillis + WaitMillis + BrewMillis) {
       endBrew();
-    } else if (elapsedTime >= PreInfTime + WaitTime) {
+    } else if (elapsedMillis >= PreInfMillis + WaitMillis) {
       brewOn();
-    } else if (elapsedTime >= PreInfTime) {
+    } else if (elapsedMillis >= PreInfMillis) {
       brewOff();
     }
   } 
   // Regular brew timing 
   else if (RegularBrew){ // Regular brew timing
-    if (elapsedTime >= BrewTime) {
+    if (elapsedMillis >= BrewMillis) {
       endBrew();
     }
   }
 }
-void shotTimerRenewCheck() {
-  unsigned int elapsedTime = (millis() - BrewStartMillis) / 1000;
-  if (BrewStartMillis != 0 && elapsedTime > BrewElapsedSeconds){
+void renewShotTimerCheck() {
+  unsigned int elapsedSeconds = (millis() - BrewStartMillis) / 1000;
+  if (BrewStartMillis != 0 && elapsedSeconds > BrewElapsedSeconds){
     BrewElapsedSeconds++;
     tft.setFont(&TITLEFONT);
     tft.setTextSize(2);
@@ -436,10 +382,19 @@ void shotTimerRenewCheck() {
   }
 }
 
+void tempCheck() {
+  unsigned long elapsedMillis = millis() - PrevTempRead;
+  if (elapsedMillis > TempWindow / TEMPTRACKWINDOW) {
+      updateTemp();
+      PrevTempRead = millis();
+  }
+}
+
 // check for time dependent function calls
 void timeChecks() {
-  windowRenewCheck();
-  shotTimerRenewCheck();
+  renewWindowCheck();
+  tempCheck();
+  renewShotTimerCheck();
   heaterOffCheck();
   brewCheck();
 }
@@ -595,7 +550,7 @@ void drawSettingsTime() {
 
   tft.setCursor(6.75*32, 5.25*32 + 1.1 * REGULARFONTWIDTH);
   tft.print("s");
-  drawNumber(BrewTime, 2, 5.5, 5.25, REGULARFONTWIDTH, true);
+  drawNumber(BrewMillis / 1000, 2, 5.5, 5.25, REGULARFONTWIDTH, true);
 
   tft.setCursor(24, 6.75*32 + 1.1 * REGULARFONTWIDTH);
   tft.print("Preinfusion");
@@ -608,7 +563,7 @@ void drawSettingsTime() {
 
   tft.setCursor(6.75*32, 8*32 + 1.1 * REGULARFONTWIDTH);
   tft.print("s");
-  drawNumber(PreInfTime, 2, 5.5, 8, REGULARFONTWIDTH, true);
+  drawNumber(PreInfMillis / 1000, 2, 5.5, 8, REGULARFONTWIDTH, true);
   
   tft.setCursor(24, 9.125*32 + 1.1 * REGULARFONTWIDTH);
   tft.print("Wait: ");
@@ -618,7 +573,7 @@ void drawSettingsTime() {
 
   tft.setCursor(6.75*32, 9.125*32 + 1.1 * REGULARFONTWIDTH);
   tft.print("s");
-  drawNumber(WaitTime, 2, 5.5, 9.125, REGULARFONTWIDTH, true);
+  drawNumber(WaitMillis / 1000, 2, 5.5, 9.125, REGULARFONTWIDTH, true);
 
   tft.setCursor(24, 10.25*32 + 1.1 * REGULARFONTWIDTH);
   tft.print("Brew: ");
@@ -628,7 +583,7 @@ void drawSettingsTime() {
 
   tft.setCursor(6.75*32, 10.25*32 + 1.1 * REGULARFONTWIDTH);
   tft.print("s");
-  drawNumber(PreInfBrewTime,  2, 5.5, 10.25, REGULARFONTWIDTH, true);
+  drawNumber(PreInfBrewMillis/1000,  2, 5.5, 10.25, REGULARFONTWIDTH, true);
 
   drawRectButton(5, 13, 4.5, 1.5, 2, "Home", REGULARFONTWIDTH, 4);
   drawRectButton(0.5, 13, 4.5, 1.5, 2, "Return", REGULARFONTWIDTH, 6);
@@ -650,7 +605,7 @@ void clearSettingsTime() {
 
   tft.setCursor(6.75*32, 5.25*32 + 1.1 * REGULARFONTWIDTH);
   tft.print("s");
-  drawNumber(BrewTime,  2, 5.5, 5.25, REGULARFONTWIDTH, true);
+  drawNumber(BrewMillis/1000,  2, 5.5, 5.25, REGULARFONTWIDTH, true);
 
   tft.setCursor(24, 6.75*32 + 1.1 * REGULARFONTWIDTH);
   tft.print("Preinfusion");
@@ -663,7 +618,7 @@ void clearSettingsTime() {
 
   tft.setCursor(6.75*32, 8*32 + 1.1 * REGULARFONTWIDTH);
   tft.print("s");
-  drawNumber(PreInfTime, 2, 5.5, 8, REGULARFONTWIDTH, true);
+  drawNumber(PreInfMillis / 1000, 2, 5.5, 8, REGULARFONTWIDTH, true);
   
   tft.setCursor(24, 9.125*32 + 1.1 * REGULARFONTWIDTH);
   tft.print("Wait: ");
@@ -673,7 +628,7 @@ void clearSettingsTime() {
 
   tft.setCursor(6.75*32, 9.125*32 + 1.1 * REGULARFONTWIDTH);
   tft.print("s");
-  drawNumber(WaitTime, 2, 5.5, 9.125, REGULARFONTWIDTH, true);
+  drawNumber(WaitMillis / 1000, 2, 5.5, 9.125, REGULARFONTWIDTH, true);
 
   tft.setCursor(24, 10.25*32 + 1.1 * REGULARFONTWIDTH);
   tft.print("Brew: ");
@@ -683,7 +638,7 @@ void clearSettingsTime() {
 
   tft.setCursor(6.75*32, 10.25*32 + 1.1 * REGULARFONTWIDTH);
   tft.print("s");
-  drawNumber(PreInfBrewTime, 2, 5.5, 10.25, REGULARFONTWIDTH, true);
+  drawNumber(PreInfMillis/1000, 2, 5.5, 10.25, REGULARFONTWIDTH, true);
 
   clearButton(5, 13, 4.5, 1.5, 0, 2, "Home", REGULARFONTWIDTH, 4);
   clearButton(0.5, 13, 4.5, 1.5, 0, 2, "Return", REGULARFONTWIDTH, 6);
@@ -777,7 +732,7 @@ void clearHomeScreen(int newScreen) {
     clearTitle("Silvia PID", 10);
     tft.setTextSize(2);
     tft.setFont(&TITLEFONT);
-    drawNumber(PrevTemp, 3, 2, 5.5, 2 * TITLEFONTWIDTH, true);
+    drawNumber(InstTemp, 3, 2, 5.5, 2 * TITLEFONTWIDTH, true);
     tft.setCursor(7.5*32, 5.5*32 + 1.1 * 2 * TITLEFONTWIDTH);
     tft.fillCircle(7.375*32, 5.5*32 + 5, 8, BACKGROUND);
     tft.print("C");
@@ -875,29 +830,29 @@ void handleTimeTouch(TSPoint p) {
   tft.setTextSize(1);
   tft.setTextColor(TEXTTWO);
   if (touchInCircle(p, 4.5, 5.625, 16)) {
-      BrewTime--;
-      refreshNumber(BrewTime, BrewTime + 1, 2, 5.5, 5.25, REGULARFONTWIDTH, true);
+      BrewMillis= BrewMillis - 1000;
+      refreshNumber(BrewMillis / 1000, BrewMillis / 1000 + 1, 2, 5.5, 5.25, REGULARFONTWIDTH, true);
   } else if (touchInCircle(p, 8, 5.625, 16)) {
-      BrewTime++;
-      refreshNumber(BrewTime, BrewTime - 1, 2, 5.5, 5.25, REGULARFONTWIDTH, true);
+      BrewMillis = BrewMillis - 1000;
+      refreshNumber(BrewMillis / 1000, BrewMillis / 1000 - 1, 2, 5.5, 5.25, REGULARFONTWIDTH, true);
   } else if (touchInCircle(p, 4.5, 8.375, 16)) {
-      PreInfTime--;
-      refreshNumber(PreInfTime, PreInfTime + 1, 2, 5.5, 8, REGULARFONTWIDTH, true);
+      PreInfMillis = PreInfMillis - 1000;
+      refreshNumber(PreInfMillis / 1000, PreInfMillis / 1000 + 1, 2, 5.5, 8, REGULARFONTWIDTH, true);
   } else if (touchInCircle(p, 8, 8.375, 16)) {
-      PreInfTime++;
-      refreshNumber(PreInfTime, PreInfTime - 1, 2, 5.5, 8, REGULARFONTWIDTH, true);
+      PreInfMillis = PreInfMillis + 1000;
+      refreshNumber(PreInfMillis / 1000, PreInfMillis / 1000 - 1, 2, 5.5, 8, REGULARFONTWIDTH, true);
   } else if (touchInCircle(p, 4.5, 9.125, 16)) {
-      WaitTime--;
-      refreshNumber(WaitTime, WaitTime + 1, 2, 5.5, 9.125, REGULARFONTWIDTH, true);
+      WaitMillis = WaitMillis - 1000;
+      refreshNumber(WaitMillis / 1000, WaitMillis / 1000 + 1, 2, 5.5, 9.125, REGULARFONTWIDTH, true);
   } else if (touchInCircle(p, 8, 9.125, 16)) {
-      WaitTime++;
-      refreshNumber(WaitTime, WaitTime - 1, 2, 5.5, 9.125, REGULARFONTWIDTH, true);
+      WaitMillis = WaitMillis + 1000;
+      refreshNumber(WaitMillis / 1000, WaitMillis / 1000 - 1, 2, 5.5, 9.125, REGULARFONTWIDTH, true);
   } else if (touchInCircle(p, 4.5, 10.625, 16)) {
-      PreInfBrewTime--;
-      refreshNumber(PreInfBrewTime, PreInfBrewTime + 1, 2, 5.5, 10.25, REGULARFONTWIDTH, true);
+      PreInfBrewMillis = PreInfBrewMillis - 1000;
+      refreshNumber(PreInfBrewMillis / 1000, PreInfBrewMillis / 1000 + 1, 2, 5.5, 10.25, REGULARFONTWIDTH, true);
   } else if (touchInCircle(p, 8, 10.625, 16)) {
-      PreInfBrewTime++;
-      refreshNumber(PreInfBrewTime, PreInfBrewTime - 1, 2, 5.5, 10.25, REGULARFONTWIDTH, true);
+      PreInfBrewMillis = PreInfBrewMillis - 1000;
+      refreshNumber(PreInfBrewMillis / 1000, PreInfBrewMillis / 1000 - 1, 2, 5.5, 10.25, REGULARFONTWIDTH, true);
   } else if (touchInButton(p, 5, 13, 4.5, 1.5)) {
       drawHomeScreen();
   } else if (touchInButton(p, 0.5, 13, 4.5, 1.5)) {
@@ -950,7 +905,7 @@ void setup() {
   tft.fillRect(0.5*32, 3*32, 9*32, 4, BORDER);
 
   Temp = 0;
-  PrevTemp = 0;
+  InstTemp = 0;
   drawHomeScreen();
 
   // Pin Initializations
@@ -966,11 +921,20 @@ void setup() {
 
   // start timing
   PreviousMillis = millis();
-  StartMillis = millis();
+  PrevTempRead = millis();
   BrewStartMillis = 0;
   BrewElapsedSeconds = 0;
 
-  // PID settings
+  // start clock
+  if (RTC.haltRTC()) {
+     Serial.println("The DS1302 is stopped.  Please run the SetTime");
+     Serial.println("example to initialize the time and begin running.");
+  }
+  if (!RTC.writeEN()) {
+      Serial.println("The DS1302 is write protected. This normal.");
+  }
+
+// PID settings
   TempPID.SetOutputLimits(0, 1);
   TempPID.SetSampleTime(WindowLength);
   TempPID.SetMode(AUTOMATIC);
@@ -990,7 +954,6 @@ void loop() {
   }
   WindowFrames++;
   switchInput();
-  updateTemp();
   TempPID.Compute();
   timeChecks();
 }
