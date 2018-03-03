@@ -1,23 +1,20 @@
+#include <Time.h>
+#include <DS1302RTC.h>
 #include </home/santiago/Arduino/silviaPID/silviaPID.h>
+#include <PID_v1.h>
+#include </home/santiago/Arduino/silviaPID/screen.h>
 
-// Touch Screen declaration
+// Touchscreen declaration
 TouchScreen ts = TouchScreen(XP, YP, XM, YM, 300);
+
 // RTC Clock declaration RTC(CE, IO, CLK)
+#define RTC_CE 43
+#define RTC_IO 41
+#define RTC_CLK 39
 DS1302RTC RTC(RTC_CE,RTC_IO,RTC_CLK);
 
-// Keeps track of the current screen
-// Home screen          1
-// Main Settings        2
-// Temperature Settings 3
-// Time Settings        4
-// Brewing screen       5
-unsigned short CurrentScreen = 0;
-
-// Kuman LCD TFT library
-MCUFRIEND_kbv tft; 
-
 // PID algorithm variables
-double Temp;
+tempTrack Temp;
 double HeatTime;
 double TargetTemp;
 double Ku = 0.3;
@@ -28,27 +25,10 @@ double Ki = Tu / 1.2;
 /*double Kp = 0.3;
 double Ki = 0;*/
 double Kd = 0;
-PID TempPID(&Temp, &HeatTime, &TargetTemp, Kp, Ki, Kd, P_ON_E, DIRECT);
-
-// Temperature tracking
-#define TEMPTRACKWINDOW 300
-double SSxx;
-double SSxy;
-double MeanTemp;
-double MeanTime;
-double TempLog[2][TEMPTRACKWINDOW];
-double InstTemp;
-unsigned long PrevTempRead;
+PID TempPID(&Temp.approxTemp, &HeatTime, &TargetTemp, Kp, Ki, Kd, P_ON_E, DIRECT);
 
 // Program Settings
-unsigned int SteamTemp = 155;
-unsigned int BrewTemp = 120;
-unsigned int BrewMillis = 28000;
-unsigned int PreInfMillis = 1000;
-unsigned int WaitMillis = 2000;
-unsigned int PreInfBrewMillis = 28;
-unsigned int WindowLength = 1000;
-unsigned int TempWindow = 1000;
+sproSettings Sett;
 
 // Brew settings
 bool PreInfuse = false;
@@ -57,31 +37,33 @@ bool Brewing = false;
 bool RegularBrew = false;
 
 // Time tracking
-unsigned long PreviousMillis;
-unsigned long BrewStartMillis;
-unsigned int BrewElapsedSeconds;
+timeTrack Time;
 unsigned int WindowFrames;
 
 
 // FUNCTION DECLARATIONS
 // *********************
 void updLinReg(double newTemp, double newMilli) {
-  SSxx = SSxx - (TempLog[0][0] * TempLog[0][0] - 20 * MeanTime * MeanTime);
-  SSxy = SSxy - (TempLog[1][0] * TempLog[0][0] - 20 * MeanTemp * MeanTime);
+  Temp.ssxx = Temp.ssxx - (Temp.instTempLog[0][0] * Temp.instTempLog[0][0] - 
+                     20 * Temp.meanTime * Temp.meanTime);
+  Temp.ssxy = Temp.ssxy - (Temp.instTempLog[1][0] * Temp.instTempLog[0][0] - 
+                     20 * Temp.meanTemp * Temp.meanTime);
 
-  MeanTemp = MeanTemp + (newTemp - TempLog[1][0]) / 20;
-  MeanTime = MeanTime + (newMilli - TempLog[0][0]) / 20;
+  Temp.meanTemp = Temp.meanTemp + (newTemp - Temp.instTempLog[1][0]) / 20;
+  Temp.meanTime = Temp.meanTime + (newMilli - Temp.instTempLog[0][0]) / 20;
 
-  SSxx = SSxx + (newMilli * newMilli - 20 * MeanTime * MeanTime);
-  SSxy = SSxy + (newTemp * newMilli - 20 * MeanTime * MeanTemp);
+  Temp.ssxx = Temp.ssxx + newMilli * newMilli - 
+                     20 * Temp.meanTime * Temp.meanTime;
+  Temp.ssxy = Temp.ssxy + newTemp * newMilli - 
+                     20 * Temp.meanTime * Temp.meanTemp;
 
   for (int i = 0; i < TEMPTRACKWINDOW - 1; i++) {
-    TempLog[0][i] = TempLog[0][i+1];
-    TempLog[1][i] = TempLog[1][i+1];
+    Temp.instTempLog[0][i] = Temp.instTempLog[0][i+1];
+    Temp.instTempLog[1][i] = Temp.instTempLog[1][i+1];
   }
 
-  TempLog[0][TEMPTRACKWINDOW - 1] = newMilli;
-  TempLog[1][TEMPTRACKWINDOW - 1] = newTemp;
+  Temp.instTempLog[0][TEMPTRACKWINDOW - 1] = newMilli;
+  Temp.instTempLog[1][TEMPTRACKWINDOW - 1] = newTemp;
 }
 
 // compute temperature and write to Temp
@@ -92,219 +74,64 @@ void updateTemp() {
   double newTemp = (tempmV * 0.98) * 100;
   updLinReg(newTemp, millis());
 
-  b1 = SSxy / SSxx;
-  b0 = MeanTemp - b1 * MeanTime;
-  Temp = b1 * millis() + b0;
+  b1 = Temp.ssxy / Temp.ssxx;
+  b0 = Temp.meanTemp - b1 * Temp.meanTime;
+  Temp.approxTemp = b1 * millis() + b0;
 }
-void drawCorner(float xCoord, float yCoord, int radius, float thickness, int orientation) {
-  int xCentre1;
-  int yCentre1;
-  int xCentre2;
-  int yCentre2;
-  switch (orientation) {
-    case 1:
-      tft.fillCircle(xCoord * 32 + radius, yCoord * 32 + radius, 
-                     radius, BORDER);
-      tft.fillCircle(xCoord * 32 + radius, 
-                     yCoord * 32 + radius, radius - thickness, BACKGROUND);
-      tft.fillRect(xCoord * 32 + radius, yCoord * 32 + thickness,
-                   radius + 1, 2 * radius - thickness + 1, BACKGROUND);
-      tft.fillRect(xCoord * 32 + thickness, yCoord * 32 + radius,
-                       radius - thickness + 1, radius + 1, BACKGROUND);
-        
-      break;
-    case 2:
-      tft.fillCircle(xCoord * 32 - radius, yCoord * 32 + radius, 
-                     radius, BORDER);
-      tft.fillCircle(xCoord * 32 - radius, yCoord * 32 + radius, 
-                     radius - thickness, BACKGROUND);
-      tft.fillRect(xCoord * 32 - 2 * radius, yCoord * 32 + thickness,
-                   radius, 2 * radius - thickness + 1, BACKGROUND);
-      tft.fillRect(xCoord * 32 - radius, yCoord * 32 + radius,
-                   radius- thickness + 1, radius + 1, BACKGROUND);
-      break;
-    case 3:
-      tft.fillCircle(xCoord * 32 - radius, yCoord * 32 - radius, 
-                     radius, BORDER);
-      tft.fillCircle(xCoord * 32 - radius, yCoord * 32 - radius, 
-              radius - thickness, BACKGROUND);
-      tft.fillRect(xCoord * 32 - 2 * radius, yCoord * 32 - 2 * radius,
-                   radius, 2 * radius - thickness + 1, BACKGROUND);
-      tft.fillRect(xCoord * 32 - radius, yCoord * 32 - 2 * radius,
-                   radius- thickness + 1, radius, BACKGROUND);
-      break;
-    case 4:
-      tft.fillCircle(xCoord * 32 + radius, yCoord * 32 - radius, 
-                     radius, BORDER);
-      tft.fillCircle(xCoord * 32 + radius, yCoord * 32 - radius, 
-              radius - thickness, BACKGROUND);
-      tft.fillRect(xCoord * 32 +  radius, yCoord * 32 - 2 * radius,
-                   radius + 1, 2 * radius - thickness + 1, BACKGROUND);
-      tft.fillRect(xCoord * 32 + thickness, yCoord * 32 - 2 * radius,
-                   radius - thickness, radius, BACKGROUND);
-      break;
-  }
-}
-
-void clearButton(float xCoord, float yCoord, float width, float height, 
-                     int radius, int thickness, char buttonText[], int charWidth,
-                     int textLength){
-  if (thickness != 0) {
-    tft.fillRect(32 * xCoord + thickness, 32 * yCoord, 32 * width - 2 * thickness, thickness, BACKGROUND);
-    tft.fillRect(32 * xCoord, 32 * yCoord, thickness, 32 * height, BACKGROUND);
-    tft.fillRect(32 * xCoord + thickness, 32 * (yCoord + height) + 1 - thickness, 32 * width - 2 * thickness, thickness, BACKGROUND);
-    tft.fillRect(32 * (xCoord + width) + 1 - thickness, 32 * yCoord, thickness, 32 * height, BACKGROUND);
-
-    tft.fillCircle(xCoord* 32 + radius, yCoord*32 + radius, radius, BACKGROUND);
-    tft.fillCircle((xCoord + width) * 32 - radius, yCoord*32 + radius, radius, BACKGROUND);
-    tft.fillCircle(xCoord* 32 + radius, (yCoord + height)*32 - radius, radius, BACKGROUND);
-    tft.fillCircle((xCoord + width)* 32 - radius, (yCoord + height)*32 - radius, radius, BACKGROUND);
-  }
-  tft.setCursor(32 * xCoord + (32 * width - charWidth*textLength)/2, 
-                32 * yCoord + (32 * height + 1.1 * charWidth)/2);
-  tft.setTextColor(BACKGROUND);
-  tft.print(buttonText);
-}
-// x, y coordinates, width, height are given as coordinates for a 10x15 grid for screen,
-// thickness is given in pixels
-void drawRoundButton(float xCoord, float yCoord, float width, float height, 
-                     int radius, int thickness, char buttonText[], int charWidth,
-                     int textLength) {
-  if (thickness != 0) {
-      // draw outer straight lines
-      tft.fillRect(32 * xCoord + radius, 32 * yCoord, 32 * width - 2 * radius, thickness, BORDER);
-      tft.fillRect(32 * xCoord, 32 * yCoord + radius, thickness, 32 * height - 2 * radius, BORDER);
-      tft.fillRect(32 * xCoord + radius, 32 * (yCoord + height) + 1- thickness, 32 * width - 2 * radius, thickness, BORDER);
-      tft.fillRect(32 * (xCoord + width) + 1 - thickness, 32 * yCoord + radius, thickness, 32 * height - 2 * radius, BORDER);
-      // draw rounded corners, breaks if thickness is 2 thicc
-      drawCorner(xCoord, yCoord, radius, thickness, 1);
-      drawCorner(xCoord + width, yCoord, radius, thickness, 2);
-      drawCorner(xCoord + width, yCoord + height, radius, thickness, 3);
-      drawCorner(xCoord, yCoord + height, radius, thickness, 4);
-  }
-  tft.setCursor(32 * xCoord + (32 * width - charWidth*textLength)/2, 
-                32 * yCoord + (32 * height + 1.1 * charWidth)/2);
-  tft.print(buttonText);
-}
-
-void drawRectButton(float xCoord, float yCoord, float width, 
-                     float height, int thickness, char buttonText[], int charWidth,
-                  int textLength) {
-  if (thickness != 0) {
-      // draw outer straight lines
-      tft.fillRect(32 * xCoord + thickness, 32 * yCoord, 32 * width - 2 * thickness, thickness, BORDER);
-      tft.fillRect(32 * xCoord, 32 * yCoord, thickness, 32 * height, BORDER);
-      tft.fillRect(32 * xCoord + thickness, 32 * (yCoord + height) + 1 - thickness, 32 * width - 2 * thickness, thickness, BORDER);
-      tft.fillRect(32 * (xCoord + width) + 1 - thickness, 32 * yCoord, thickness, 32 * height, BORDER);
-  }
-  tft.setCursor(32 * xCoord + (32 * width - charWidth*textLength)/2, 
-                32 * yCoord + (32 * height + 1.1 * charWidth)/2);
-  tft.print(buttonText);
-}
-
-void drawPlusButton(float xCoord, float yCoord, int radius) {
-  tft.fillCircle(32 * xCoord, 32 * yCoord, radius, BORDER);
-  tft.fillRect(32 * xCoord - 0.825 * radius, 32 * yCoord  - 0.125 * radius,
-               1.75 * radius, 0.25 * radius , BACKGROUND);  
-  tft.fillRect(32 * xCoord - 0.125 * radius, 32 * yCoord  - 0.825 * radius, 
-               0.25 * radius, 1.75 * radius , BACKGROUND);  
-}
-
-void drawMinusButton(float xCoord, float yCoord, int radius){ 
-  tft.fillCircle(32 * xCoord, 32 * yCoord, radius, BORDER);
-  tft.fillRect(32 * xCoord - 0.825 * radius, 32 * yCoord  - 0.125 * radius, 
-               1.75 * radius, 0.25 * radius , BACKGROUND);  
-}
-
-void drawNumber(float num, int maxLength, float xCoord, 
-                   float yCoord, int charWidth, bool isInt){
-  int position = 0;
-  if (num <= -100) { 
-    position = maxLength - 4;
-  } else if (num <= -10 || num >= 100) {
-    position = maxLength - 3;
-  } else if (num <= -1 || num >= 10) {
-    position = maxLength - 2;
-  } else {
-    position = maxLength - 1;
-  }
-  if (!isInt) {
-    position = position - 2;
-  }
-  if (position < 0) {
-      position = maxLength - 1;
-      num = 0;
-  }
-  
-  tft.setCursor(xCoord * 32 + position * charWidth, yCoord * 32 + charWidth * 1.1);
-  if (isInt) {
-    tft.print((int)num);
-  } else {
-    tft.print(num);
-  }
-}
-void refreshNumber(float newNum, float oldNum, int maxLength, float xCoord, 
-                   float yCoord, int charWidth, bool isInt){
-  tft.setTextColor(BACKGROUND);
-  drawNumber(oldNum, maxLength, xCoord, yCoord, charWidth, isInt);
-  tft.setTextColor(TEXTTWO);
-  drawNumber(newNum, maxLength, xCoord, yCoord, charWidth, isInt);
-}
-
-// minimize head to desk bashing
+// print data to serial
 void dispInfo() {
   Serial.print(millis());
   Serial.print(',' );
-  Serial.println(Temp);
-  /*Serial.print("Purge: ");
-  Serial.println(Purge);
-  Serial.print("PreInfuse: ");
-  Serial.println(PreInfuse);
-  Serial.print("Brewing: ");
-  Serial.println(Brewing);
-  Serial.print("Frames per Window: ");
-  Serial.println(WindowFrames);
-  Serial.print("target Temp: ");
-  Serial.println(TargetTemp);
-  Serial.print("Brew Switch: ");
-  Serial.println(digitalRead(BREW_PIN));
-  Serial.print("Steam Switch: ");
-  Serial.println(digitalRead(STEAM_PIN));
-  Serial.println();*/
+  Serial.println(Temp.approxTemp);
 }
+
 // monitor machine switch states
 void switchInput() {
   // Steam switch response
   if (digitalRead(STEAM_PIN) == 1) {
-    TargetTemp = SteamTemp;
+    TargetTemp = Sett.steamTemp;
   } else {
-    TargetTemp = BrewTemp;
+    TargetTemp = Sett.brewTemp;
   }
   // Brew switch response
-  if (digitalRead(BREW_PIN) == 1 && BrewStartMillis == 0) {
+  if (digitalRead(BREW_PIN) == 1 && Time.brewStartMillis == 0) {
     startBrew();
-  } else if (digitalRead(BREW_PIN) == 0 && BrewStartMillis != 0 && Brewing == false) {
+  } else if (digitalRead(BREW_PIN) == 0 && Time.brewStartMillis != 0 && Brewing == false) {
     endBrew();
   }
 }
-// check time and turn on heater / reset window
-void renewWindowCheck() {
-  unsigned long elapsedMillis = millis() - PreviousMillis;
-  if (elapsedMillis >= WindowLength) {
+// controls heater state
+void heaterCheck() {
+  unsigned long elapsedMillis = millis() - Time.windowStartMillis;
+  if (elapsedMillis >= Sett.windowLength) {
+    digitalWrite(HEAT_PIN, 1);
+    Time.windowStartMillis = Time.windowStartMillis + Sett.windowLength;
+    WindowFrames = 0;
+  }
+  if (elapsedMillis >= Sett.windowLength * HeatTime) {
+    digitalWrite(HEAT_PIN, 0);
+  }
+}
+
+void renewFrameCheck() {
+  unsigned long elapsedMillis = millis() - Time.frameStartMillis;
+  if (elapsedMillis >= Sett.frameLength) {
     dispInfo();
     switch (CurrentScreen) {
-        case 1:
         case 5:
-          if ((int) Temp != (int) InstTemp && elapsedMillis < 1.2 * WindowLength) {
+          if ((int) Temp.approxTemp != Temp.dispTemp && Temp.approxTemp >= 0) {
               tft.setTextSize(2);
               tft.setFont(&TITLEFONT);
-              refreshNumber(Temp, InstTemp, 3, 2, 5.5, 2 * TITLEFONTWIDTH, true);
-              InstTemp = Temp;
+              refreshNumber(Temp.approxTemp, Temp.dispTemp, 3, 2, 5.5, 2 * TITLEFONTWIDTH, true);
+              if (Temp.approxTemp >= 0) {
+                  Temp.dispTemp = (unsigned int) Temp.approxTemp;
+              }
+          } else if(Temp.approxTemp < 0){
+              Temp.dispTemp = 0;
           }
           break;
     }
-    digitalWrite(HEAT_PIN, 1);
-    PreviousMillis = PreviousMillis + WindowLength;
+    Time.frameStartMillis = Time.frameStartMillis + Sett.frameLength;
     WindowFrames = 0;
   }
 }
@@ -313,10 +140,8 @@ void renewWindowCheck() {
 // check to see if PID computed heater time has elapsed
 // and open heater relay if so
 void heaterOffCheck() {
-  unsigned long elapsedMillis = millis() - PreviousMillis;
-  if (elapsedMillis >= WindowLength * HeatTime) {
-    digitalWrite(HEAT_PIN, 0);
-  }
+  unsigned long elapsedMillis = millis() - Time.windowStartMillis;
+  
 }
 // close valve/pump relay
 void brewOn() {
@@ -330,8 +155,8 @@ void brewOff() {
 }
 // start brew and initialize brew timer
 void startBrew() {
-  drawBrewingScreen();
-  BrewStartMillis = millis();
+  drawBrewingScreen(Temp, Time, Sett);
+  Time.brewStartMillis = millis();
   brewOn();
 }
 // stop brew and reset brew timer
@@ -342,13 +167,13 @@ void endBrew() {
   Purge = false;
   RegularBrew = false;
   delay(500);
-  drawHomeScreen();
-  BrewStartMillis = 0;
-  BrewElapsedSeconds = 0;
+  drawHomeScreen(Temp, Time, Sett);
+  Time.brewStartMillis = 0;
+  Time.brewElapsedSec = 0;
 }
 // controls timing for brew
 void brewCheck() {
-  unsigned long elapsedMillis = millis() - BrewStartMillis;
+  unsigned long elapsedMillis = millis() - Time.brewStartMillis;
   if (Purge) { 
       if (elapsedMillis >= 2000){
           endBrew();
@@ -356,407 +181,50 @@ void brewCheck() {
   } 
   // pre infusion timing
   else if (PreInfuse) {
-    if (elapsedMillis >= PreInfMillis + WaitMillis + BrewMillis) {
+    if (elapsedMillis >= Sett.preInfMillis + Sett.waitMillis + Sett.brewMillis) {
       endBrew();
-    } else if (elapsedMillis >= PreInfMillis + WaitMillis) {
+    } else if (elapsedMillis >= Sett.preInfMillis + Sett.waitMillis) {
       brewOn();
-    } else if (elapsedMillis >= PreInfMillis) {
+    } else if (elapsedMillis >= Sett.preInfMillis) {
       brewOff();
     }
   } 
   // Regular brew timing 
   else if (RegularBrew){ // Regular brew timing
-    if (elapsedMillis >= BrewMillis) {
+    if (elapsedMillis >= Sett.brewMillis) {
       endBrew();
     }
   }
 }
 void renewShotTimerCheck() {
-  unsigned int elapsedSeconds = (millis() - BrewStartMillis) / 1000;
-  if (BrewStartMillis != 0 && elapsedSeconds > BrewElapsedSeconds){
-    BrewElapsedSeconds++;
+  unsigned int elapsedSeconds = (millis() - Time.brewStartMillis) / 1000;
+  if (Time.brewStartMillis != 0 && elapsedSeconds > Time.brewElapsedSec){
+    Time.brewElapsedSec++;
     tft.setFont(&TITLEFONT);
     tft.setTextSize(2);
-    refreshNumber(BrewElapsedSeconds, BrewElapsedSeconds-1,
+    refreshNumber(Time.brewElapsedSec, Time.brewElapsedSec-1,
                      3, 0.5, 9.5, TITLEFONTWIDTH * 2, true);
   }
 }
 
 void tempCheck() {
-  unsigned long elapsedMillis = millis() - PrevTempRead;
-  if (elapsedMillis > TempWindow / TEMPTRACKWINDOW) {
+  unsigned long elapsedMillis = millis() - Temp.prevTempRead;
+  if (elapsedMillis > Temp.tempWindow / TEMPTRACKWINDOW) {
       updateTemp();
-      PrevTempRead = millis();
+      Temp.prevTempRead = millis();
   }
 }
 
 // check for time dependent function calls
 void timeChecks() {
-  renewWindowCheck();
+  heaterCheck();
+  renewFrameCheck();
   tempCheck();
   renewShotTimerCheck();
   heaterOffCheck();
   brewCheck();
 }
 
-void titleText(char* title, int titleLen) {
-  tft.setTextSize(1);
-  tft.setTextColor(TEXTONE);
-  tft.setFont(&TITLEFONT);
-  drawRoundButton(0,0,10,3,0,0,title, TITLEFONTWIDTH, titleLen);
-  tft.setFont(&REGULARFONT);
-}
-
-void clearTitle(char* title, int titleLen) {
-  tft.setTextSize(1);
-  tft.setFont(&TITLEFONT);
-  clearButton(0,0,10,3,0,0,title, TITLEFONTWIDTH, titleLen);
-}
-
-void drawSettingsHome() {
-  clearScreen(2);
-  CurrentScreen = 2;
-
-  titleText("Settings",  8);
-  tft.setTextColor(TEXTTWO);
-  tft.setFont(&REGULARFONT);
-  tft.setTextSize(1);
-  drawRoundButton(0.5, 4, 9, 2.5, 16, 4, "Temperature", REGULARFONTWIDTH, 11);
-  drawRoundButton(0.5, 7, 9, 2.5, 16, 4, "Brew Time", REGULARFONTWIDTH, 9);
-  drawRoundButton(0.5, 10, 9, 2.5, 16, 4, "Set PID", REGULARFONTWIDTH, 7);
-  drawRectButton(5, 13, 4.5, 1.5, 2, "Home", REGULARFONTWIDTH, 4);
-}
-
-void clearSettingsHome() {
-  clearTitle("Settings", 8);
-  tft.setFont(&REGULARFONT);
-  tft.setTextSize(1);
-  clearButton(0.5, 4, 9, 2.5, 16, 4, "Temperature", REGULARFONTWIDTH, 11);
-  clearButton(0.5, 7, 9, 2.5, 16, 4, "Brew Time", REGULARFONTWIDTH, 9);
-  clearButton(0.5, 10, 9, 2.5, 16, 4, "Set PID", REGULARFONTWIDTH, 7);
-  clearButton(5, 13, 4.5, 1.5, 0, 2, "Home", REGULARFONTWIDTH, 4);
-}
-
-void drawSettingsTemp() {
-  clearScreen(3);
-  CurrentScreen = 3;
-  titleText("Temperature",  11);
-
-  // brew temperature interface
-  tft.setTextColor(TEXTTWO);
-  tft.setTextSize(1);
-  tft.setFont(&TITLEFONT);
-  drawRectButton(0.5, 3.5, 9, 2, 0, "Brew Temp.", TITLEFONTWIDTH, 10);
-  //tft.setCursor(32, 4*32);
-  //tft.print("Brew Temp.");
-
-  tft.setTextSize(2);
-  tft.setFont(&REGULARFONT);
-
-  drawMinusButton(1.25, 6.5, 24);
-  drawPlusButton(8.75, 6.5, 24);
-
-  tft.setCursor(6.5*32, 5.75*32 + 1.1 * 2 * REGULARFONTWIDTH);
-  tft.println("C");
-
-  tft.fillCircle(6.125*32 + 2, 6*32, 8, TEXTTWO);
-  tft.fillCircle(6.125*32 + 2, 6*32, 5, BACKGROUND);
-
-  drawNumber(BrewTemp, 3, 2, 5.75, 2 * REGULARFONTWIDTH, true);
-  
-  // steam temperature interface
-  tft.setTextSize(1);
-  tft.setFont(&TITLEFONT);
-  drawRectButton(0.5, 7.5, 9, 2, 0, "Steam Temp.", TITLEFONTWIDTH, 11);
-
-  drawMinusButton(1.25, 10.5, 24);
-  drawPlusButton(8.75, 10.5, 24);
-
-  tft.setTextSize(2);
-  tft.setFont(&REGULARFONT);
-  tft.setCursor(6.5*32, 9.75*32 + 1.1 * 2 *REGULARFONTWIDTH);
-  tft.println("C");
-
-  tft.fillCircle(6.125*32 + 2, 10*32, 8, TEXTTWO);
-  tft.fillCircle(6.125*32 + 2, 10*32, 5, BACKGROUND);
-
-  drawNumber(SteamTemp, 3, 2, 9.75, 2 * REGULARFONTWIDTH, true);
-
-  tft.setTextSize(1);
-  tft.setFont(&REGULARFONT);
-  drawRectButton(5, 13, 4.5, 1.5, 2, "Home", REGULARFONTWIDTH, 4);
-  drawRectButton(0.5, 13, 4.5, 1.5, 2, "Return", REGULARFONTWIDTH, 6);
-}
-
-void clearSettingsTemp() {
-  clearTitle("Temperature", 11);
-
-  tft.setTextSize(1);
-  tft.setFont(&TITLEFONT);
-  tft.setTextColor(BACKGROUND);
-  clearButton(0.5, 3.5, 9, 2, 0, 0,"Brew Temp.", TITLEFONTWIDTH, 10);
-
-  tft.setTextSize(2);
-  tft.setFont(&REGULARFONT);
-
-  tft.fillCircle(1.25*32, 6.5*32, 24, BACKGROUND);
-  tft.fillCircle(8.75*32, 6.5*32, 24, BACKGROUND);
-
-  tft.setCursor(6.5*32, 5.75*32 + 1.1 * 2 * REGULARFONTWIDTH);
-  tft.println("C");
-
-  tft.fillCircle(6.125*32 + 2, 6*32, 8, BACKGROUND);
-
-  drawNumber(BrewTemp, 3, 2, 5.75, 2 * REGULARFONTWIDTH, true);
-  
-  tft.setTextSize(1);
-  tft.setFont(&TITLEFONT);
-  clearButton(0.5, 7.5, 9, 2, 0, 0, "Steam Temp.", TITLEFONTWIDTH, 11);
-
-  tft.fillCircle(1.25*32, 10.5*32, 24, BACKGROUND);
-  tft.fillCircle(8.75*32, 10.5*32, 24, BACKGROUND);
-
-  tft.setTextSize(2);
-  tft.setFont(&REGULARFONT);
-  tft.setCursor(6.5*32, 9.75*32 + 1.1 * 2 *REGULARFONTWIDTH);
-  tft.println("C");
-
-  tft.fillCircle(6.125*32 + 2, 10*32, 8, BACKGROUND);
-
-  drawNumber(SteamTemp, 3, 2, 9.75, 2 * REGULARFONTWIDTH, true);
-
-  tft.setTextSize(1);
-  tft.setFont(&REGULARFONT);
-  clearButton(5, 13, 4.5, 1.5, 0, 2, "Home", REGULARFONTWIDTH, 4);
-  clearButton(0.5, 13, 4.5, 1.5, 0, 2, "Return", REGULARFONTWIDTH, 6);
-}
-
-void drawSettingsTime() {
-  clearScreen(4);
-  CurrentScreen = 4;
-  titleText("Brew Time",  9);
-  tft.setTextColor(TEXTTWO);
-
-  tft.setTextSize(1);
-  tft.setFont(&REGULARFONT);
-  tft.setCursor(24, 4*32 + 1.1 * REGULARFONTWIDTH);
-  tft.print("Regular Brew");
-  
-  tft.setCursor(24, 5.25*32 + 1.1 * REGULARFONTWIDTH);
-  tft.print("Time: ");
-  
-  drawMinusButton(4.5, 5.625, 16);
-  drawPlusButton(8, 5.625, 16);
-
-  tft.setCursor(6.75*32, 5.25*32 + 1.1 * REGULARFONTWIDTH);
-  tft.print("s");
-  drawNumber(BrewMillis / 1000, 2, 5.5, 5.25, REGULARFONTWIDTH, true);
-
-  tft.setCursor(24, 6.75*32 + 1.1 * REGULARFONTWIDTH);
-  tft.print("Preinfusion");
-
-  tft.setCursor(24, 8*32 + 1.1 * REGULARFONTWIDTH);
-  tft.print("Pre: ");
-  
-  drawMinusButton(4.5, 8.375, 16);
-  drawPlusButton(8, 8.375, 16);
-
-  tft.setCursor(6.75*32, 8*32 + 1.1 * REGULARFONTWIDTH);
-  tft.print("s");
-  drawNumber(PreInfMillis / 1000, 2, 5.5, 8, REGULARFONTWIDTH, true);
-  
-  tft.setCursor(24, 9.125*32 + 1.1 * REGULARFONTWIDTH);
-  tft.print("Wait: ");
-  
-  drawMinusButton(4.5, 9.5, 16);
-  drawPlusButton(8, 9.5, 16);
-
-  tft.setCursor(6.75*32, 9.125*32 + 1.1 * REGULARFONTWIDTH);
-  tft.print("s");
-  drawNumber(WaitMillis / 1000, 2, 5.5, 9.125, REGULARFONTWIDTH, true);
-
-  tft.setCursor(24, 10.25*32 + 1.1 * REGULARFONTWIDTH);
-  tft.print("Brew: ");
-  
-  drawMinusButton(4.5, 10.625, 16);
-  drawPlusButton(8, 10.625, 16);
-
-  tft.setCursor(6.75*32, 10.25*32 + 1.1 * REGULARFONTWIDTH);
-  tft.print("s");
-  drawNumber(PreInfBrewMillis/1000,  2, 5.5, 10.25, REGULARFONTWIDTH, true);
-
-  drawRectButton(5, 13, 4.5, 1.5, 2, "Home", REGULARFONTWIDTH, 4);
-  drawRectButton(0.5, 13, 4.5, 1.5, 2, "Return", REGULARFONTWIDTH, 6);
-}
-void clearSettingsTime() {
-  clearTitle("Brew Time",  9);
-  tft.setTextColor(BACKGROUND);
-
-  tft.setTextSize(1);
-  tft.setFont(&REGULARFONT);
-  tft.setCursor(24, 4*32 + 1.1 * REGULARFONTWIDTH);
-  tft.print("Regular Brew");
-  
-  tft.setCursor(24, 5.25*32 + 1.1 * REGULARFONTWIDTH);
-  tft.print("Time: ");
-  
-  tft.fillCircle(4.5*32, 5.625*32, 16, BACKGROUND);
-  tft.fillCircle(8*32, 5.625*32, 16, BACKGROUND);
-
-  tft.setCursor(6.75*32, 5.25*32 + 1.1 * REGULARFONTWIDTH);
-  tft.print("s");
-  drawNumber(BrewMillis/1000,  2, 5.5, 5.25, REGULARFONTWIDTH, true);
-
-  tft.setCursor(24, 6.75*32 + 1.1 * REGULARFONTWIDTH);
-  tft.print("Preinfusion");
-
-  tft.setCursor(24, 8*32 + 1.1 * REGULARFONTWIDTH);
-  tft.print("Pre: ");
-  
-  tft.fillCircle(4.5*32, 8.375*32, 16, BACKGROUND);
-  tft.fillCircle(8*32, 8.375*32, 16, BACKGROUND);
-
-  tft.setCursor(6.75*32, 8*32 + 1.1 * REGULARFONTWIDTH);
-  tft.print("s");
-  drawNumber(PreInfMillis / 1000, 2, 5.5, 8, REGULARFONTWIDTH, true);
-  
-  tft.setCursor(24, 9.125*32 + 1.1 * REGULARFONTWIDTH);
-  tft.print("Wait: ");
-  
-  tft.fillCircle(4.5*32, 9.5*32, 16, BACKGROUND);
-  tft.fillCircle(8*32, 9.5*32, 16, BACKGROUND);
-
-  tft.setCursor(6.75*32, 9.125*32 + 1.1 * REGULARFONTWIDTH);
-  tft.print("s");
-  drawNumber(WaitMillis / 1000, 2, 5.5, 9.125, REGULARFONTWIDTH, true);
-
-  tft.setCursor(24, 10.25*32 + 1.1 * REGULARFONTWIDTH);
-  tft.print("Brew: ");
-  
-  tft.fillCircle(4.5*32, 10.625*32, 16, BACKGROUND);
-  tft.fillCircle(8*32, 10.625*32, 16, BACKGROUND);
-
-  tft.setCursor(6.75*32, 10.25*32 + 1.1 * REGULARFONTWIDTH);
-  tft.print("s");
-  drawNumber(PreInfMillis/1000, 2, 5.5, 10.25, REGULARFONTWIDTH, true);
-
-  clearButton(5, 13, 4.5, 1.5, 0, 2, "Home", REGULARFONTWIDTH, 4);
-  clearButton(0.5, 13, 4.5, 1.5, 0, 2, "Return", REGULARFONTWIDTH, 6);
-}
-void drawBrewingScreen() {
-  clearScreen(5);
-  CurrentScreen = 5;
-
-  tft.setTextSize(1);
-  tft.setTextColor(TEXTTWO);
-  tft.setFont(&REGULARFONT);
-  drawRectButton(0.5, 8, 0, 1.1 * REGULARFONTWIDTH/ 32.0, 0, "Shot Timer:", REGULARFONTWIDTH, 0);
-
-  tft.setFont(&TITLEFONT);
-  tft.setTextSize(2);
-  tft.setTextColor(TEXTTWO);
-  drawNumber(0, 3, 0.5, 9.5, TITLEFONTWIDTH * 2, true);
-  tft.setCursor(0.5 * 32 + TITLEFONTWIDTH * 2 * 3, 9.5*32 + 2 * TITLEFONTWIDTH * 1.1);
-  tft.print("s");
-
-  tft.fillCircle(5*32, 13.25*32, 1.5*32, RED);
-  tft.setTextSize(1);
-  tft.setFont(&REGULARFONT);
-  tft.setTextColor(WHITE);
-  drawRoundButton(5-1.5, 13.25-1.5, 1.5*2, 1.5*2, 0, 0, "STOP", REGULARFONTWIDTH, 4);
-}
-
-void clearBrewingScreen() {
-  tft.setTextSize(1);
-  tft.setTextColor(BACKGROUND);
-  tft.setFont(&REGULARFONT);
-  clearButton(0.5, 8, 0, 1.1 * REGULARFONTWIDTH/ 32.0, 0, 0, "Shot Timer:", REGULARFONTWIDTH, 0);
-
-  tft.setFont(&TITLEFONT);
-  tft.setTextSize(2);
-  drawNumber(BrewElapsedSeconds, 3, 0.5, 9.5, TITLEFONTWIDTH * 2, true);
-  tft.setCursor(0.5 * 32 + TITLEFONTWIDTH * 2 * 3, 9.5*32 + 2 * TITLEFONTWIDTH * 1.1);
-  tft.print("s");
-
-  tft.fillCircle(5*32, 13.25*32, 1.5*32, BACKGROUND);
-}
-
-void drawHomeScreen() {
-  clearScreen(1);
-  CurrentScreen = 1;
-  // title text
-  titleText("Silvia PID",  10);
-
-  // temperature display
-  tft.setTextSize(2);
-  tft.setTextColor(TEXTTWO);
-  tft.setFont(&TITLEFONT);
-  tft.setCursor(7.5*32, 5.5*32 + 1.1 * 2 * TITLEFONTWIDTH);
-  tft.fillCircle(7.375*32, 5.5*32 + 5, 8, TEXTTWO);
-  tft.fillCircle(7.375*32, 5.5*32 + 5, 5, BACKGROUND);
-  tft.print("C");
-
-  tft.setTextSize(1);
-  tft.setFont(&REGULARFONT);
-  tft.setTextColor(TEXTTWO);
-  drawRoundButton(0.5, 4, 0, 0, 0, 0, "Temperature: ", REGULARFONTWIDTH, 0);
-
-  // option buttons
-  drawRoundButton(0.5, 8, 9, 5.5, 16, 5, "", REGULARFONTWIDTH, 0);
-  tft.fillRect(5*32 - 2, 8*32, 4, 5.5*32, BORDER);
-  tft.fillRect(0.5*32, 10.75*32 - 2, 9*32, 4, BORDER);
-
-  drawRoundButton(0.5, 8, 4.5, 2.75, 16, 0, "Brew", REGULARFONTWIDTH, 4); 
-  drawRoundButton(5, 8, 4.5, 2.75, 16, 0, "Preinf", REGULARFONTWIDTH, 6); 
-  drawRoundButton(0.5, 10.75, 4.5, 2.75, 16, 0, "Purge", REGULARFONTWIDTH, 5); 
-  drawRoundButton(5, 10.75, 4.5, 2.75, 16, 0, "Sett.", REGULARFONTWIDTH, 5); 
-}
-
-void clearHomeScreen(int newScreen) {
-  clearButton(0.5, 8, 9, 5.5, 16, 5, "", REGULARFONTWIDTH, 0);
-  tft.fillRect(5*32 - 2, 8*32, 4, 5.5*32, BACKGROUND);
-  tft.fillRect(0.5*32, 10.75*32 - 2, 9*32, 4, BACKGROUND);
-
-  tft.setTextSize(1);
-  tft.setFont(&REGULARFONT);
-  tft.setTextColor(BACKGROUND);
-  clearButton(0.5, 8, 4.5, 2.75, 16, 0, "Brew", REGULARFONTWIDTH, 4); 
-  clearButton(5, 8, 4.5, 2.75, 16, 0, "Preinf", REGULARFONTWIDTH, 6); 
-  clearButton(0.5, 10.75, 4.5, 2.75, 16, 0, "Purge", REGULARFONTWIDTH, 5); 
-  clearButton(5, 10.75, 4.5, 2.75, 16, 0, "Sett.", REGULARFONTWIDTH, 5); 
-
-  if (newScreen != 5){
-    tft.setTextSize(1);
-    tft.setFont(&REGULARFONT);
-    clearButton(0.5, 4, 0, 0, 0, 0, "Temperature: ", REGULARFONTWIDTH, 0);
-    clearTitle("Silvia PID", 10);
-    tft.setTextSize(2);
-    tft.setFont(&TITLEFONT);
-    drawNumber(InstTemp, 3, 2, 5.5, 2 * TITLEFONTWIDTH, true);
-    tft.setCursor(7.5*32, 5.5*32 + 1.1 * 2 * TITLEFONTWIDTH);
-    tft.fillCircle(7.375*32, 5.5*32 + 5, 8, BACKGROUND);
-    tft.print("C");
-  }
-}
-
-void clearScreen(int newScreen) {
-  switch (CurrentScreen){
-    case 1:
-      clearHomeScreen(newScreen);
-      break;
-    case 2:
-      clearSettingsHome();
-      break;
-    case 3:
-      clearSettingsTemp();
-      break;
-    case 4:
-      clearSettingsTime();
-      break;
-    case 5:
-      clearBrewingScreen();
-  }
-}
 
 
 // Touch handling (lol)
@@ -790,39 +258,39 @@ void handleHomeTouch(TSPoint p) {
       RegularBrew = false;
       startBrew();
   } else if (touchInButton(p, 5, 10.75, 4.5, 2.75)) {
-      drawSettingsHome();
+      drawSettingsHome(Temp, Time, Sett);
   }
 }
 void handleSettingsTouch(TSPoint p) {
   if (touchInButton(p, 0.5, 4, 9, 2.5)) {
-      drawSettingsTemp();
+      drawSettingsTemp(Temp, Time, Sett);
   } else if (touchInButton(p, 0.5, 7, 9, 2.5)) {
-      drawSettingsTime();
+      drawSettingsTime(Temp, Time, Sett);
   } else if (touchInButton(p, 0.5, 10, 9, 2.5)) {
       Serial.println("PID Settings button press");
   } else if (touchInButton(p, 5, 13, 4.5, 1.5)) {
-      drawHomeScreen();
+      drawHomeScreen(Temp, Time, Sett);
   }
 }
 void handleTemperatureTouch(TSPoint p) {
   tft.setFont(&REGULARFONT);
   tft.setTextSize(2);
   if (touchInCircle(p, 1.25, 6.5, 32)) {
-    BrewTemp--;
-    refreshNumber(BrewTemp, BrewTemp + 1, 3, 2, 5.75, 2 * REGULARFONTWIDTH, true);
+    Sett.brewTemp--;
+    refreshNumber(Sett.brewTemp, Sett.brewTemp + 1, 3, 2, 5.75, 2 * REGULARFONTWIDTH, true);
   } else if (touchInCircle(p, 8.75, 6.5, 32)) {
-    BrewTemp++;
-    refreshNumber(BrewTemp, BrewTemp - 1, 3, 2, 5.75, 2 * REGULARFONTWIDTH, true);
+    Sett.brewTemp++;
+    refreshNumber(Sett.brewTemp, Sett.brewTemp - 1, 3, 2, 5.75, 2 * REGULARFONTWIDTH, true);
   } else if (touchInCircle(p, 1.25, 10.5, 32)) {
-    SteamTemp--;
-    refreshNumber(SteamTemp, SteamTemp + 1, 3, 2, 9.75, 2 * REGULARFONTWIDTH, true);
+    Sett.steamTemp--;
+    refreshNumber(Sett.steamTemp, Sett.steamTemp + 1, 3, 2, 9.75, 2 * REGULARFONTWIDTH, true);
   } else if (touchInCircle(p, 8.75, 10.5, 32)) {
-    SteamTemp++;
-    refreshNumber(SteamTemp, SteamTemp - 1, 3, 2, 9.75, 2 * REGULARFONTWIDTH, true);
+    Sett.steamTemp++;
+    refreshNumber(Sett.steamTemp, Sett.steamTemp - 1, 3, 2, 9.75, 2 * REGULARFONTWIDTH, true);
   } else if (touchInButton(p, 5, 13, 4.5, 1.5)) {
-    drawHomeScreen();
+    drawHomeScreen(Temp, Time, Sett);
   } else if (touchInButton(p, 0.5, 13, 4.5, 1.5)) {
-    drawSettingsHome();
+    drawSettingsHome(Temp, Time, Sett);
   }
 }
 void handleTimeTouch(TSPoint p) {
@@ -830,33 +298,33 @@ void handleTimeTouch(TSPoint p) {
   tft.setTextSize(1);
   tft.setTextColor(TEXTTWO);
   if (touchInCircle(p, 4.5, 5.625, 16)) {
-      BrewMillis= BrewMillis - 1000;
-      refreshNumber(BrewMillis / 1000, BrewMillis / 1000 + 1, 2, 5.5, 5.25, REGULARFONTWIDTH, true);
+      Sett.brewMillis= Sett.brewMillis - 1000;
+      refreshNumber(Sett.brewMillis / 1000, Sett.brewMillis / 1000 + 1, 2, 5.5, 5.25, REGULARFONTWIDTH, true);
   } else if (touchInCircle(p, 8, 5.625, 16)) {
-      BrewMillis = BrewMillis - 1000;
-      refreshNumber(BrewMillis / 1000, BrewMillis / 1000 - 1, 2, 5.5, 5.25, REGULARFONTWIDTH, true);
+      Sett.brewMillis = Sett.brewMillis - 1000;
+      refreshNumber(Sett.brewMillis / 1000, Sett.brewMillis / 1000 - 1, 2, 5.5, 5.25, REGULARFONTWIDTH, true);
   } else if (touchInCircle(p, 4.5, 8.375, 16)) {
-      PreInfMillis = PreInfMillis - 1000;
-      refreshNumber(PreInfMillis / 1000, PreInfMillis / 1000 + 1, 2, 5.5, 8, REGULARFONTWIDTH, true);
+      Sett.preInfMillis = Sett.preInfMillis - 1000;
+      refreshNumber(Sett.preInfMillis / 1000, Sett.preInfMillis / 1000 + 1, 2, 5.5, 8, REGULARFONTWIDTH, true);
   } else if (touchInCircle(p, 8, 8.375, 16)) {
-      PreInfMillis = PreInfMillis + 1000;
-      refreshNumber(PreInfMillis / 1000, PreInfMillis / 1000 - 1, 2, 5.5, 8, REGULARFONTWIDTH, true);
+      Sett.preInfMillis = Sett.preInfMillis + 1000;
+      refreshNumber(Sett.preInfMillis / 1000, Sett.preInfMillis / 1000 - 1, 2, 5.5, 8, REGULARFONTWIDTH, true);
   } else if (touchInCircle(p, 4.5, 9.125, 16)) {
-      WaitMillis = WaitMillis - 1000;
-      refreshNumber(WaitMillis / 1000, WaitMillis / 1000 + 1, 2, 5.5, 9.125, REGULARFONTWIDTH, true);
+      Sett.waitMillis = Sett.waitMillis - 1000;
+      refreshNumber(Sett.waitMillis / 1000, Sett.waitMillis / 1000 + 1, 2, 5.5, 9.125, REGULARFONTWIDTH, true);
   } else if (touchInCircle(p, 8, 9.125, 16)) {
-      WaitMillis = WaitMillis + 1000;
-      refreshNumber(WaitMillis / 1000, WaitMillis / 1000 - 1, 2, 5.5, 9.125, REGULARFONTWIDTH, true);
+      Sett.waitMillis = Sett.waitMillis + 1000;
+      refreshNumber(Sett.waitMillis / 1000, Sett.waitMillis / 1000 - 1, 2, 5.5, 9.125, REGULARFONTWIDTH, true);
   } else if (touchInCircle(p, 4.5, 10.625, 16)) {
-      PreInfBrewMillis = PreInfBrewMillis - 1000;
-      refreshNumber(PreInfBrewMillis / 1000, PreInfBrewMillis / 1000 + 1, 2, 5.5, 10.25, REGULARFONTWIDTH, true);
+      Sett.preInfBrewMillis = Sett.preInfBrewMillis - 1000;
+      refreshNumber(Sett.preInfBrewMillis / 1000, Sett.preInfBrewMillis / 1000 + 1, 2, 5.5, 10.25, REGULARFONTWIDTH, true);
   } else if (touchInCircle(p, 8, 10.625, 16)) {
-      PreInfBrewMillis = PreInfBrewMillis - 1000;
-      refreshNumber(PreInfBrewMillis / 1000, PreInfBrewMillis / 1000 - 1, 2, 5.5, 10.25, REGULARFONTWIDTH, true);
+      Sett.preInfBrewMillis = Sett.preInfBrewMillis - 1000;
+      refreshNumber(Sett.preInfBrewMillis / 1000, Sett.preInfBrewMillis / 1000 - 1, 2, 5.5, 10.25, REGULARFONTWIDTH, true);
   } else if (touchInButton(p, 5, 13, 4.5, 1.5)) {
-      drawHomeScreen();
+      drawHomeScreen(Temp, Time, Sett);
   } else if (touchInButton(p, 0.5, 13, 4.5, 1.5)) {
-      drawSettingsHome();
+      drawSettingsHome(Temp, Time, Sett);
   }
 }
 void handleBrewingTouch(TSPoint p) {
@@ -895,6 +363,16 @@ void touchInput(TSPoint p) {
 void setup() {
   Serial.begin(9600);
 
+  // default settings
+  Sett.steamTemp = 155;
+  Sett.brewTemp = 120;
+  Sett.brewMillis = 28000;
+  Sett.preInfMillis = 1000;
+  Sett.waitMillis = 2000;
+  Sett.preInfBrewMillis = 28;
+  Sett.windowLength = 1000;
+  Sett.frameLength = 1000;
+
   // initialize screen
   tft.reset();
   uint16_t identifier = 0x9486;
@@ -904,9 +382,7 @@ void setup() {
   tft.setFont(&REGULARFONT);
   tft.fillRect(0.5*32, 3*32, 9*32, 4, BORDER);
 
-  Temp = 0;
-  InstTemp = 0;
-  drawHomeScreen();
+  drawHomeScreen(Temp, Time, Sett);
 
   // Pin Initializations
   // thermocouple pin
@@ -920,10 +396,11 @@ void setup() {
   pinMode(VALVE_PIN, OUTPUT);
 
   // start timing
-  PreviousMillis = millis();
-  PrevTempRead = millis();
-  BrewStartMillis = 0;
-  BrewElapsedSeconds = 0;
+  Time.windowStartMillis = millis();
+  Time.frameStartMillis = millis();
+  Time.brewStartMillis = 0;
+  Time.brewElapsedSec = 0;
+  Temp.prevTempRead = millis();
 
   // start clock
   if (RTC.haltRTC()) {
@@ -936,7 +413,7 @@ void setup() {
 
 // PID settings
   TempPID.SetOutputLimits(0, 1);
-  TempPID.SetSampleTime(WindowLength);
+  TempPID.SetSampleTime(Sett.windowLength);
   TempPID.SetMode(AUTOMATIC);
 }
 
