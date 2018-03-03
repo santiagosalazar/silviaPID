@@ -136,13 +136,6 @@ void renewFrameCheck() {
   }
 }
 
-
-// check to see if PID computed heater time has elapsed
-// and open heater relay if so
-void heaterOffCheck() {
-  unsigned long elapsedMillis = millis() - Time.windowStartMillis;
-  
-}
 // close valve/pump relay
 void brewOn() {
   digitalWrite(PUMP_PIN, 1);
@@ -221,7 +214,6 @@ void timeChecks() {
   renewFrameCheck();
   tempCheck();
   renewShotTimerCheck();
-  heaterOffCheck();
   brewCheck();
 }
 
@@ -230,7 +222,7 @@ void timeChecks() {
 // Touch handling (lol)
 bool touchInButton(TSPoint p, float xCoord, float yCoord, float width, float height) {
   float touchX = 10 - (p.y / 32.0 - 3.5) * (10.0 / 25.1);
-  float touchY = (p.x / 32.0 - 2.3) * (15.0 / 26.65);
+  float touchY = 15 -(p.x / 32.0 - 2.3) * (15.0 / 26.65);
   return (touchX >= xCoord && touchX <= xCoord + width &&
         touchY >= yCoord && touchY <= yCoord + height); 
 }
@@ -364,12 +356,13 @@ void setup() {
   Serial.begin(9600);
 
   // default settings
-  Sett.steamTemp = 155;
   Sett.brewTemp = 120;
+  Sett.steamTemp = 155;
   Sett.brewMillis = 28000;
   Sett.preInfMillis = 1000;
   Sett.waitMillis = 2000;
-  Sett.preInfBrewMillis = 28;
+  Sett.preInfBrewMillis = 28000;
+  Sett.purgeMillis = 2000;
   Sett.windowLength = 1000;
   Sett.frameLength = 1000;
 
@@ -378,6 +371,7 @@ void setup() {
   uint16_t identifier = 0x9486;
   tft.begin(identifier);
   tft.setTextWrap(false);
+  tft.setRotation(2);
   tft.fillScreen(BACKGROUND);
   tft.setFont(&REGULARFONT);
   tft.fillRect(0.5*32, 3*32, 9*32, 4, BORDER);
