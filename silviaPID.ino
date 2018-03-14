@@ -57,13 +57,13 @@ void updLinReg(double newTemp, double newMilli) {
   Temp.ssxy = Temp.ssxy + newTemp * newMilli - 
                      20 * Temp.meanTime * Temp.meanTemp;
 
-  for (int i = 0; i < TEMPTRACKWINDOW - 1; i++) {
+  for (int i = 0; i < TEMP_TRACK_POINTS - 1; i++) {
     Temp.instTempLog[0][i] = Temp.instTempLog[0][i+1];
     Temp.instTempLog[1][i] = Temp.instTempLog[1][i+1];
   }
 
-  Temp.instTempLog[0][TEMPTRACKWINDOW - 1] = newMilli;
-  Temp.instTempLog[1][TEMPTRACKWINDOW - 1] = newTemp;
+  Temp.instTempLog[0][TEMP_TRACK_POINTS - 1] = newMilli;
+  Temp.instTempLog[1][TEMP_TRACK_POINTS - 1] = newTemp;
 }
 
 // compute temperature and write to Temp
@@ -82,7 +82,10 @@ void updateTemp() {
 void dispInfo() {
   Serial.print(millis());
   Serial.print(',' );
-  Serial.println(Temp.approxTemp);
+  Serial.print(Temp.approxTemp);
+  //Serial.print(',' );
+  //Serial.print(CurrentScreen);
+  Serial.println();
 }
 
 // monitor machine switch states
@@ -119,6 +122,7 @@ void renewFrameCheck() {
     dispInfo();
     switch (CurrentScreen) {
         case 5:
+        case 1:
           if ((int) Temp.approxTemp != Temp.dispTemp && Temp.approxTemp >= 0) {
               tft.setTextSize(2);
               tft.setFont(&TITLEFONT);
@@ -148,19 +152,23 @@ void brewOff() {
 }
 // start brew and initialize brew timer
 void startBrew() {
-  drawBrewingScreen(Temp, Time, Sett);
-  Time.brewStartMillis = millis();
+  if (!Purge){
+      drawBrewingScreen(Temp, Time, Sett);
+      Time.brewStartMillis = millis();
+  }
   brewOn();
 }
 // stop brew and reset brew timer
 void endBrew() {
   brewOff();
+  delay(500);
+  if  (!Purge) {
+      drawHomeScreen(Temp, Time, Sett);
+  }
   PreInfuse = false;
   Brewing = false;
   Purge = false;
   RegularBrew = false;
-  delay(500);
-  drawHomeScreen(Temp, Time, Sett);
   Time.brewStartMillis = 0;
   Time.brewElapsedSec = 0;
 }
@@ -202,7 +210,7 @@ void renewShotTimerCheck() {
 
 void tempCheck() {
   unsigned long elapsedMillis = millis() - Temp.prevTempRead;
-  if (elapsedMillis > Temp.tempWindow / TEMPTRACKWINDOW) {
+  if (elapsedMillis > Temp.tempWindow / TEMP_TRACK_POINTS) {
       updateTemp();
       Temp.prevTempRead = millis();
   }
@@ -221,7 +229,7 @@ void timeChecks() {
 
 // Touch handling (lol)
 bool touchInButton(TSPoint p, float xCoord, float yCoord, float width, float height) {
-  float touchX = 10 - (p.y / 32.0 - 3.5) * (10.0 / 25.1);
+  float touchX = (p.y / 32.0 - 3.5) * (10.0 / 25.1);
   float touchY = 15 -(p.x / 32.0 - 2.3) * (15.0 / 26.65);
   return (touchX >= xCoord && touchX <= xCoord + width &&
         touchY >= yCoord && touchY <= yCoord + height); 
@@ -231,25 +239,29 @@ bool touchInCircle(TSPoint p, float xCoord, float yCoord, int radius) {
                        2 * radius / 32.0, 2 * radius / 32.0);
 }
 void handleHomeTouch(TSPoint p) {
-  if (touchInButton(p, 0.5, 8, 4.5, 2.75)) {
-      Brewing = true;
-      Purge = false;
+  if (touchInButton(p, 0.5, 10.75, 4.5, 2.75)) {
+      Serial.println("Purge");
+      Brewing = false;
+      Purge = true;
       PreInfuse = false;
       RegularBrew = true;
       startBrew();
-  } else if (touchInButton(p, 5, 8, 4.5, 2.75)) {
+  } else if (touchInButton(p, 0.5, 8, 4.5, 2.75)) {
+      Serial.println("Brew");
       Brewing = true;
       Purge = false;
       PreInfuse = true;
       RegularBrew = false;
       startBrew();
-  } else if (touchInButton(p, 0.5, 10.75, 4.5, 2.75)) {
+  } else if (touchInButton(p, 5, 8, 4.5, 2.75)) {
+      Serial.println("Preinf");
       Brewing = true;
-      Purge = true;
-      PreInfuse = false;
+      Purge = false;
+      PreInfuse = true;
       RegularBrew = false;
       startBrew();
   } else if (touchInButton(p, 5, 10.75, 4.5, 2.75)) {
+      Serial.println("Settings touched");
       drawSettingsHome(Temp, Time, Sett);
   }
 }
@@ -326,9 +338,6 @@ void handleBrewingTouch(TSPoint p) {
   }
 }
 void touchInput(TSPoint p) {
-  float touchX = 10 - (p.y / 32.0 - 3.5) * (10.0 / 25.1);
-  float touchY = (p.x / 32.0 - 2.3) * (15.0 / 26.65);
-  //tft.fillCircle(touchX * 32, touchY * 32, 5, GREEN);
   switch (CurrentScreen) {
     case 1:
       handleHomeTouch(p);
@@ -365,6 +374,7 @@ void setup() {
   Sett.purgeMillis = 2000;
   Sett.windowLength = 1000;
   Sett.frameLength = 1000;
+  Temp.tempWindow = 1000;
 
   // initialize screen
   tft.reset();
@@ -395,6 +405,7 @@ void setup() {
   Time.brewStartMillis = 0;
   Time.brewElapsedSec = 0;
   Temp.prevTempRead = millis();
+
 
   // start clock
   if (RTC.haltRTC()) {

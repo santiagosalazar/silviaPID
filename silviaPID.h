@@ -1,6 +1,7 @@
 #ifndef SILVIAPID_H
 #define SILVIAPID_H
-#define TEMPTRACKWINDOW 300
+#define TEMP_TRACK_POINTS 150
+
 
 struct tempTrack {
     float ssxx;
@@ -8,7 +9,7 @@ struct tempTrack {
     float meanTemp;
     float meanTime;
     double approxTemp;
-    float instTempLog[2][TEMPTRACKWINDOW];
+    float instTempLog[2][TEMP_TRACK_POINTS];
     unsigned int dispTemp;
     unsigned long prevTempRead;
     unsigned long tempWindow;

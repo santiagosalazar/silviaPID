@@ -330,7 +330,9 @@ void drawBrewingScreen(tempTrack temperature, timeTrack time, sproSettings setti
 void drawHomeScreen(tempTrack temperature,timeTrack time, sproSettings settings) {
   clearScreen(1, temperature, time, settings);
   CurrentScreen = 1;
+  
   // title text
+  
   titleText("Silvia PID",  10);
 
   // temperature display
