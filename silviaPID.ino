@@ -43,27 +43,27 @@ unsigned int WindowFrames;
 
 // FUNCTION DECLARATIONS
 // *********************
-void updLinReg(double newTemp, double newMilli) {
-  Temp.ssxx = Temp.ssxx - (Temp.instTempLog[0][0] * Temp.instTempLog[0][0] - 
+void updLinReg(double newVolt, double newMilli) {
+  Temp.ssxx = Temp.ssxx - (Temp.analogVoltLog[0][0] * Temp.analogVoltLog[0][0] - 
                      20 * Temp.meanTime * Temp.meanTime);
-  Temp.ssxy = Temp.ssxy - (Temp.instTempLog[1][0] * Temp.instTempLog[0][0] - 
-                     20 * Temp.meanTemp * Temp.meanTime);
+  Temp.ssxy = Temp.ssxy - (Temp.analogVoltLog[1][0] * Temp.analogVoltLog[0][0] - 
+                     20 * Temp.meanVolt * Temp.meanTime);
 
-  Temp.meanTemp = Temp.meanTemp + (newTemp - Temp.instTempLog[1][0]) / 20;
-  Temp.meanTime = Temp.meanTime + (newMilli - Temp.instTempLog[0][0]) / 20;
+  Temp.meanVolt = Temp.meanVolt + (newVolt - Temp.analogVoltLog[1][0]) / 20;
+  Temp.meanTime = Temp.meanTime + (newMilli - Temp.analogVoltLog[0][0]) / 20;
 
   Temp.ssxx = Temp.ssxx + newMilli * newMilli - 
                      20 * Temp.meanTime * Temp.meanTime;
-  Temp.ssxy = Temp.ssxy + newTemp * newMilli - 
-                     20 * Temp.meanTime * Temp.meanTemp;
+  Temp.ssxy = Temp.ssxy + newVolt * newMilli - 
+                     20 * Temp.meanTime * Temp.meanVolt;
 
   for (int i = 0; i < TEMP_TRACK_POINTS - 1; i++) {
-    Temp.instTempLog[0][i] = Temp.instTempLog[0][i+1];
-    Temp.instTempLog[1][i] = Temp.instTempLog[1][i+1];
+    Temp.analogVoltLog[0][i] = Temp.analogVoltLog[0][i+1];
+    Temp.analogVoltLog[1][i] = Temp.analogVoltLog[1][i+1];
   }
 
-  Temp.instTempLog[0][TEMP_TRACK_POINTS - 1] = newMilli;
-  Temp.instTempLog[1][TEMP_TRACK_POINTS - 1] = newTemp;
+  Temp.analogVoltLog[0][TEMP_TRACK_POINTS - 1] = newMilli;
+  Temp.analogVoltLog[1][TEMP_TRACK_POINTS - 1] = newVolt;
 }
 
 // compute temperature and write to Temp
@@ -72,11 +72,12 @@ void updateTemp() {
   double b1;
   double tempmV = analogRead(TEMP_PIN) * 5.0 / 1023.0;
   double newTemp = (tempmV * 0.98) * 100;
-  updLinReg(newTemp, millis());
+  updLinReg(tempmV, millis());
 
   b1 = Temp.ssxy / Temp.ssxx;
-  b0 = Temp.meanTemp - b1 * Temp.meanTime;
-  Temp.approxTemp = b1 * millis() + b0;
+  b0 = Temp.meanVolt - b1 * Temp.meanTime;
+  // 98 = voltage to temp conversion factor for ad595
+  Temp.approxTemp = (b1 * millis() + b0) * 98;
 }
 // print data to serial
 void dispInfo() {

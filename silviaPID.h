@@ -1,15 +1,23 @@
 #ifndef SILVIAPID_H
 #define SILVIAPID_H
-#define TEMP_TRACK_POINTS 150
 
+// Determines frequency of data sampling
+#define TEMP_TRACK_POINTS 150
+// Pin declarations
+#define TEMP_PIN A15
+#define HEAT_PIN 53
+#define PUMP_PIN 51
+#define VALVE_PIN 49
+#define STEAM_PIN 39
+#define BREW_PIN 37
 
 struct tempTrack {
-    float ssxx;
-    float ssxy;
-    float meanTemp;
-    float meanTime;
+    double ssxx;
+    double ssxy;
+    double meanVolt;
+    double meanTime;
     double approxTemp;
-    float instTempLog[2][TEMP_TRACK_POINTS];
+    uint16_t analogVoltLog[2][TEMP_TRACK_POINTS];
     unsigned int dispTemp;
     unsigned long prevTempRead;
     unsigned long tempWindow;
@@ -31,14 +39,6 @@ struct sproSettings {
     unsigned long windowLength;
     unsigned long frameLength;
 };
-
-// Pin declarations
-#define TEMP_PIN A15
-#define HEAT_PIN 53
-#define PUMP_PIN 51
-#define VALVE_PIN 49
-#define STEAM_PIN 47
-#define BREW_PIN 45
 
 
 #define TS_MINX 130
