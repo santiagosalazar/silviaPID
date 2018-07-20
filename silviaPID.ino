@@ -3,6 +3,7 @@
 #include </home/santiago/Arduino/silviaPID/silviaPID.h>
 #include <PID_v1.h>
 #include </home/santiago/Arduino/silviaPID/screen.h>
+#include </home/santiago/Arduino/silviaPID/temperature.h>
 
 // Touchscreen declaration
 TouchScreen ts = TouchScreen(XP, YP, XM, YM, 300);
@@ -13,8 +14,13 @@ TouchScreen ts = TouchScreen(XP, YP, XM, YM, 300);
 #define RTC_CLK 39
 DS1302RTC RTC(RTC_CE,RTC_IO,RTC_CLK);
 
-// PID algorithm variables
+// Temp tracking
 tempTrack Temp;
+
+// Program Settings
+sproSettings Sett;
+
+// PID algorithm variables
 double HeatTime;
 double TargetTemp;
 double Ku = 0.3;
@@ -27,10 +33,8 @@ double Ki = 0;*/
 double Kd = 0;
 PID TempPID(&Temp.approxTemp, &HeatTime, &TargetTemp, Kp, Ki, Kd, P_ON_E, DIRECT);
 
-// Program Settings
-sproSettings Sett;
 
-// Brew settings
+// Brew options
 bool PreInfuse = false;
 bool Purge = false;
 bool Brewing = false;
@@ -43,47 +47,16 @@ unsigned int WindowFrames;
 
 // FUNCTION DECLARATIONS
 // *********************
-void updLinReg(double newVolt, double newMilli) {
-  Temp.ssxx = Temp.ssxx - (Temp.analogVoltLog[0][0] * Temp.analogVoltLog[0][0] - 
-                     20 * Temp.meanTime * Temp.meanTime);
-  Temp.ssxy = Temp.ssxy - (Temp.analogVoltLog[1][0] * Temp.analogVoltLog[0][0] - 
-                     20 * Temp.meanVolt * Temp.meanTime);
-
-  Temp.meanVolt = Temp.meanVolt + (newVolt - Temp.analogVoltLog[1][0]) / 20;
-  Temp.meanTime = Temp.meanTime + (newMilli - Temp.analogVoltLog[0][0]) / 20;
-
-  Temp.ssxx = Temp.ssxx + newMilli * newMilli - 
-                     20 * Temp.meanTime * Temp.meanTime;
-  Temp.ssxy = Temp.ssxy + newVolt * newMilli - 
-                     20 * Temp.meanTime * Temp.meanVolt;
-
-  for (int i = 0; i < TEMP_TRACK_POINTS - 1; i++) {
-    Temp.analogVoltLog[0][i] = Temp.analogVoltLog[0][i+1];
-    Temp.analogVoltLog[1][i] = Temp.analogVoltLog[1][i+1];
-  }
-
-  Temp.analogVoltLog[0][TEMP_TRACK_POINTS - 1] = newMilli;
-  Temp.analogVoltLog[1][TEMP_TRACK_POINTS - 1] = newVolt;
-}
-
-// compute temperature and write to Temp
-void updateTemp() {
-  double b0;
-  double b1;
-  double tempmV = analogRead(TEMP_PIN) * 5.0 / 1023.0;
-  double newTemp = (tempmV * 0.98) * 100;
-  updLinReg(tempmV, millis());
-
-  b1 = Temp.ssxy / Temp.ssxx;
-  b0 = Temp.meanVolt - b1 * Temp.meanTime;
-  // 98 = voltage to temp conversion factor for ad595
-  Temp.approxTemp = (b1 * millis() + b0) * 98;
-}
 // print data to serial
 void dispInfo() {
-  Serial.print(millis());
-  Serial.print(',' );
-  Serial.print(Temp.approxTemp);
+  Serial.print("Time of info query: ");
+  Serial.println(millis());
+  Serial.print("Approx temp: ");
+  Serial.println(Temp.approxTemp);
+  Serial.print("Mean voltage: ");
+  Serial.println(Temp.meanVoltRead);
+  Serial.print("Temperature pin reading: ");
+  Serial.println(analogRead(TEMP_PIN));
   //Serial.print(',' );
   //Serial.print(CurrentScreen);
   Serial.println();
@@ -212,7 +185,7 @@ void renewShotTimerCheck() {
 void tempCheck() {
   unsigned long elapsedMillis = millis() - Temp.prevTempRead;
   if (elapsedMillis > Temp.tempWindow / TEMP_TRACK_POINTS) {
-      updateTemp();
+      updateTemp(Temp);
       Temp.prevTempRead = millis();
   }
 }
@@ -364,18 +337,8 @@ void touchInput(TSPoint p) {
 // ******************
 void setup() {
   Serial.begin(9600);
-
-  // default settings
-  Sett.brewTemp = 120;
-  Sett.steamTemp = 155;
-  Sett.brewMillis = 28000;
-  Sett.preInfMillis = 1000;
-  Sett.waitMillis = 2000;
-  Sett.preInfBrewMillis = 28000;
-  Sett.purgeMillis = 2000;
-  Sett.windowLength = 1000;
-  Sett.frameLength = 1000;
-  Temp.tempWindow = 1000;
+  initSettings(Sett);
+  initTempTrack(Temp);
 
   // initialize screen
   tft.reset();

@@ -11,17 +11,6 @@
 #define STEAM_PIN 39
 #define BREW_PIN 37
 
-struct tempTrack {
-    double ssxx;
-    double ssxy;
-    double meanVolt;
-    double meanTime;
-    double approxTemp;
-    uint16_t analogVoltLog[2][TEMP_TRACK_POINTS];
-    unsigned int dispTemp;
-    unsigned long prevTempRead;
-    unsigned long tempWindow;
-};
 struct timeTrack {
     unsigned long windowStartMillis;
     unsigned long frameStartMillis;
@@ -40,6 +29,19 @@ struct sproSettings {
     unsigned long frameLength;
 };
 
+void initSettings(sproSettings Sett){
+  // default settings
+  Sett.brewTemp = 120;
+  Sett.steamTemp = 155;
+  Sett.brewMillis = 28000;
+  Sett.preInfMillis = 1000;
+  Sett.waitMillis = 2000;
+  Sett.preInfBrewMillis = 28000;
+  Sett.purgeMillis = 2000;
+  Sett.windowLength = 1000;
+  Sett.frameLength = 1000;
+
+}
 
 #define TS_MINX 130
 #define TS_MAXX 905

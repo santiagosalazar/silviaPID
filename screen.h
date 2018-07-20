@@ -1,5 +1,6 @@
 #include </home/santiago/Arduino/silviaPID/graphics.h>
 #include </home/santiago/Arduino/silviaPID/silviaPID.h>
+#include </home/santiago/Arduino/silviaPID/temperature.h>
 
 // LCD declarations
 #define LCD_CS A3
