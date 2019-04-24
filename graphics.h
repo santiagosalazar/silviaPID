@@ -1,3 +1,5 @@
+#ifndef GRAPHICS_h
+#define GRAPHICS_h
 #include <TouchScreen.h>
 #include <MCUFRIEND_kbv.h>
 #include <Fonts/FreeMonoBold18pt7b.h>
@@ -195,6 +197,8 @@ void drawNumber(float num, int maxLength, float xCoord,
     tft.print(num);
   }
 }
+
+// Clears oldNum and replaces with newNum, correcting for number of digits
 void refreshNumber(float newNum, float oldNum, int maxLength, float xCoord, 
                    float yCoord, int charWidth, bool isInt){
   tft.setTextColor(BACKGROUND);
@@ -202,3 +206,4 @@ void refreshNumber(float newNum, float oldNum, int maxLength, float xCoord,
   tft.setTextColor(TEXTTWO);
   drawNumber(newNum, maxLength, xCoord, yCoord, charWidth, isInt);
 }
+#endif
