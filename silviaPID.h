@@ -11,12 +11,15 @@
 #define STEAM_PIN 43
 #define BREW_PIN 41
 
+// Keeps track of brew times, screen frame times, and heating window times
 struct timeTrack {
     unsigned long windowStartMillis;
     unsigned long frameStartMillis;
     unsigned long brewStartMillis;
     unsigned int brewElapsedSec;
 };
+
+// Keeps track of time and temperature settings for brewing and steaming
 struct sproSettings {
     unsigned int brewTemp;
     unsigned int steamTemp;
@@ -32,6 +35,7 @@ struct sproSettings {
 timeTrack *time;
 sproSettings *settings;
 
+// Initialize time tracking
 void initTimeTrack(timeTrack *iniTime) {
   iniTime->windowStartMillis = millis();
   iniTime->frameStartMillis = millis();
@@ -40,6 +44,7 @@ void initTimeTrack(timeTrack *iniTime) {
   time = iniTime;
 }
 
+// initialize time/temp settings with default values
 void initSettings(sproSettings *iniSett){
   // default settings
   iniSett->brewTemp = 112;
@@ -54,6 +59,7 @@ void initSettings(sproSettings *iniSett){
   settings = iniSett;
 }
 
+// Touch screen configuration
 #define TS_MINX 130
 #define TS_MAXX 905
 #define TS_MINY 75

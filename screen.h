@@ -1,8 +1,8 @@
 #ifndef SCREEN_h
 #define SCREEN_h
-#include </home/santiago/Arduino/silviaPID/graphics.h>
-#include </home/santiago/Arduino/silviaPID/silviaPID.h>
-#include </home/santiago/Arduino/silviaPID/temperature.h>
+#include "graphics.h"
+#include "silviaPID.h"
+#include "temperature.h"
 
 // LCD declarations
 #define LCD_CS A3
@@ -18,13 +18,6 @@
 // Time Settings        4
 // Brewing screen       5
 unsigned short CurrentScreen = 0;
-
-// Clear "Silvia PID" Title
-void clearTitle(char* title, int titleLen) {
-    tft.setTextSize(1);
-    tft.setFont(&TITLEFONT);
-    clearButton(0,0,10,3,0,0,title, TITLEFONTWIDTH, titleLen);
-}
 
 // Clear Temperature Settings Screen
 void clearSettingsTemp() {
@@ -166,6 +159,7 @@ void clearSettingsTime() {
   clearButton(0.5, 13, 4.5, 1.5, 0, 2, "Return", REGULARFONTWIDTH, 6);
 }
 
+// Clear brewing screen
 void clearBrewingScreen() {
   tft.setTextSize(1);
   tft.setTextColor(BACKGROUND);
@@ -181,6 +175,7 @@ void clearBrewingScreen() {
   tft.fillCircle(5*32, 13.25*32, 1.5*32, BACKGROUND);
 }
 
+// Choose which clearing function to call based on current and next screen
 void clearScreen(int newScreen) {
   switch (CurrentScreen){
     case 1:
@@ -200,6 +195,7 @@ void clearScreen(int newScreen) {
   }
 }
 
+// Draw the temperature settings screen
 void drawSettingsTemp() {
   clearScreen(3);
   CurrentScreen = 3;
@@ -210,8 +206,6 @@ void drawSettingsTemp() {
   tft.setTextSize(1);
   tft.setFont(&TITLEFONT);
   drawRectButton(0.5, 3.5, 9, 2, 0, "Brew Temp.", TITLEFONTWIDTH, 10);
-  //tft.setCursor(32, 4*32);
-  //tft.print("Brew Temp.");
 
   tft.setTextSize(2);
   tft.setFont(&REGULARFONT);
@@ -253,6 +247,7 @@ void drawSettingsTemp() {
 
 
 
+// Draw the screen for shot time settings
 void drawSettingsTime() {
   clearScreen(4);
   CurrentScreen = 4;
@@ -311,6 +306,7 @@ void drawSettingsTime() {
   drawRectButton(0.5, 13, 4.5, 1.5, 2, "Return", REGULARFONTWIDTH, 6);
 }
 
+// Draw brewing screen
 void drawBrewingScreen() {
   clearScreen(5);
   CurrentScreen = 5;
@@ -334,14 +330,12 @@ void drawBrewingScreen() {
   drawRoundButton(5-1.5, 13.25-1.5, 1.5*2, 1.5*2, 0, 0, "STOP", REGULARFONTWIDTH, 4);
 }
 
-
-
+// Draw the home screen
 void drawHomeScreen() {
   clearScreen(1);
   CurrentScreen = 1;
   
   // title text
-  
   titleText("Silvia PID",  10);
 
   // temperature display
@@ -374,6 +368,7 @@ void drawHomeScreen() {
   refreshNumber(temp->approxTemp, temp->dispTemp, 3, 2, 5.5, 2 * TITLEFONTWIDTH, true);
 }
 
+// Draw the home settings screen, can access temp and time settings
 void drawSettingsHome() {
   clearScreen(2);
   CurrentScreen = 2;

@@ -1,11 +1,12 @@
 #include <Time.h>
 #include <DS1302RTC.h>
-#include </home/santiago/Arduino/silviaPID/silviaPID.h>
 #include <PID_v1.h>
-#include </home/santiago/Arduino/silviaPID/screen.h>
-#include </home/santiago/Arduino/silviaPID/temperature.h>
-#include </home/santiago/Arduino/silviaPID/touch.h>
-#include </home/santiago/Arduino/silviaPID/brewControl.h>
+
+#include "silviaPID.h"
+#include "screen.h"
+#include "temperature.h"
+#include "touch.h"
+#include "brewControl.h"
 
 
 // RTC Clock declaration RTC(CE, IO, CLK)
@@ -22,7 +23,6 @@ tempTrack Temp;
 
 // Time tracking
 timeTrack Time;
-unsigned int WindowFrames;
 
 // Brew tracking
 brewState CurrState;
@@ -42,9 +42,10 @@ double Kd = Tu / 16;*/
 double Kp = 0.1;
 double Ki = 0;
 double Kd = 0;
+// Initialize PID
 PID TempPID(&Temp.approxTemp, &HeatTime, &TargetTemp, Kp, Ki, Kd, P_ON_E, DIRECT);
 
-// FUNCTION DECLARATIONS
+// FUNCTION DEFINITIONS
 // *********************
 // print data to serial
 void dispInfo() {
@@ -86,28 +87,31 @@ void switchInput() {
 // controls heater state
 void heaterCheck() {
   unsigned long elapsedMillis = millis() - Time.windowStartMillis;
-  // starts heater if the machine is brewing
-  // disabled for now since affects temperature stability with long shot times.
+
+  // starts heater if the machine is brewing. Improves shot recovery time
+  // disabled for now since it affects temperature stability with long shot times.
   bool isLoseHeat = false;// CurrState.isBrewing||(digitalRead(BREW_PIN)==1);
 
+  // Turn heater on if we have rolled over to the next window and reset window timer
   if ((HeatTime!= 0 && elapsedMillis >= Sett.windowLength)|| isLoseHeat){
     digitalWrite(HEAT_PIN, 1);
     Time.windowStartMillis = Time.windowStartMillis + Sett.windowLength;
-    WindowFrames = 0;
   }
+
+  // Turn heater off if we have reached heat response time
   else if (elapsedMillis >= Sett.windowLength * HeatTime) {
     digitalWrite(HEAT_PIN, 0);
   }
 }
 
-// Check to see if screen needs to be updated and does so if necessary
+// Check to see if screen frame needs to be renewed
 void renewFrameCheck() {
   unsigned long elapsedMillis = millis() - Time.frameStartMillis;
   if (elapsedMillis >= Sett.frameLength) {
     dispInfo();
     switch (CurrentScreen) {
-        case 5:
         case 1:
+          // Update temperature displayed on screen
           if ((int) Temp.approxTemp != Temp.dispTemp && Temp.approxTemp >= 0) {
               tft.setTextSize(2);
               tft.setFont(&TITLEFONT);
@@ -121,13 +125,14 @@ void renewFrameCheck() {
           break;
     }
     Time.frameStartMillis = Time.frameStartMillis + Sett.frameLength;
-    WindowFrames = 0;
   }
 }
 
 // controls timing for brew
 void brewCheck() {
   unsigned long elapsedMillis = millis() - Time.brewStartMillis;
+
+  // Purge timing
   if (CurrState.modePurge) { 
       if (elapsedMillis >= 2000){
           endBrew();
@@ -150,6 +155,8 @@ void brewCheck() {
     }
   }
 }
+
+// Renew the screen shot timer when necessary
 void renewShotTimerCheck() {
   unsigned int elapsedSeconds = (millis() - Time.brewStartMillis) / 1000;
   if (Time.brewStartMillis != 0 && elapsedSeconds > Time.brewElapsedSec && !CurrState.modePurge){
@@ -161,7 +168,7 @@ void renewShotTimerCheck() {
   }
 }
 
-// Checks to see if enough time has passed since last temp read
+// Checks to see if temperature needs to be read
 void tempCheck() {
   unsigned long elapsedMillis = millis() - Temp.prevTempRead;
   if (elapsedMillis > (float) Temp.tempWindow / TEMP_TRACK_POINTS) {
@@ -182,6 +189,7 @@ void timeChecks() {
 // MAIN PROGRAM CALLS
 // ******************
 void setup() {
+  // Initialize structs
   Serial.begin(9600);
   initSettings(&Sett);
   initTempTrack(&Temp);
@@ -238,7 +246,6 @@ void loop() {
 
   touchInput(p);
 
-  WindowFrames++;
   switchInput();
   TempPID.Compute();
   timeChecks();

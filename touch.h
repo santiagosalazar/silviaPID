@@ -6,10 +6,6 @@
 #define XM A3  // must be an analog pin, use "An" notation!
 #define YM 8   // can be a digital pin
 #define XP 9   // can be a digital pin
-/*#define XP A1  //my stuff lol
-#define YP A2
-#define XM A3
-#define YM A8*/
 #define TS_MINX 130
 #define TS_MAXX 905
 #define TS_MINY 75
@@ -19,12 +15,12 @@
 
 
 #include <TouchScreen.h>
-#include </home/santiago/Arduino/silviaPID/silviaPID.h>
-#include </home/santiago/Arduino/silviaPID/brewControl.h>
-#include </home/santiago/Arduino/silviaPID/screen.h>
+#include "silviaPID.h"
+#include "brewControl.h"
+#include "screen.h"
 
 
-// Function Declarations
+// FUNCTION DECLARATIONS
 void touchInput(TSPoint p);
 void handleTouch(TSPoint p);
 void handleHomeTouch(TSPoint);
@@ -38,17 +34,15 @@ bool touchInCircle(TSPoint p, float, float, int);
 // Touchscreen declaration
 TouchScreen Ts = TouchScreen(XP, YP, XM, YM, 300);
 
-// Touch handling (lol)
+// Trigger touch action if pressure exceeds threshold
 void touchInput(TSPoint p) {
   if (p.z > MIN_PRESSURE && p.z < MAX_PRESSURE) {
       handleTouch(p);
   }
 }
+
+// Delegate touch input according to current screen
 void handleTouch(TSPoint p) {
-  Serial.print("Touch xcoord: ");
-  Serial.println(p.x);
-  Serial.print("Touch ycoord: ");
-  Serial.println(p.y);
   switch (CurrentScreen) {
     case 1:
       handleHomeTouch(p);
@@ -68,33 +62,31 @@ void handleTouch(TSPoint p) {
   }
 }
 
+// Manage touch on home screen buttons
 void handleHomeTouch(TSPoint p) {
   if (touchInButton(p, 0.5, 10.75, 4.5, 2.75)) {
-      Serial.println("Purge");
       currState->isBrewing = true;
       currState->modePurge = true;
       currState->modePreInfuse = false;
       currState->modeRegBrew = false;
       startBrew();
   } else if (touchInButton(p, 0.5, 8, 4.5, 2.75)) {
-      Serial.println("Brew");
       currState->isBrewing = true;
       currState->modePurge = false;
       currState->modePreInfuse = false;
       currState->modeRegBrew = true;
       startBrew();
   } else if (touchInButton(p, 5, 8, 4.5, 2.75)) {
-      Serial.println("Preinf");
       currState->isBrewing = true;
       currState->modePurge = false;
       currState->modePreInfuse = true;
       currState->modeRegBrew = false;
       startBrew();
   } else if (touchInButton(p, 5, 10.75, 4.5, 2.75)) {
-      Serial.println("Settings touched");
       drawSettingsHome();
   }
 }
+// Manage touch on settings screen buttons
 void handleSettingsTouch(TSPoint p) {
   if (touchInButton(p, 0.5, 4, 9, 2.5)) {
       drawSettingsTemp();
@@ -106,6 +98,8 @@ void handleSettingsTouch(TSPoint p) {
       drawHomeScreen();
   }
 }
+
+// Manage touch on temperature settings screen
 void handleTemperatureTouch(TSPoint p) {
   tft.setFont(&REGULARFONT);
   tft.setTextSize(2);
@@ -127,46 +121,60 @@ void handleTemperatureTouch(TSPoint p) {
     drawSettingsHome();
   }
 }
+
+// Manage touch on brew timing settings screen
 void handleTimeTouch(TSPoint p) {
   tft.setFont(&REGULARFONT);
   tft.setTextSize(1);
   tft.setTextColor(TEXTTWO);
   if (touchInCircle(p, 4.5, 5.625, 16)) {
       settings->brewMillis= settings->brewMillis - 1000;
-      refreshNumber(settings->brewMillis / 1000, settings->brewMillis / 1000 + 1, 2, 5.5, 5.25, REGULARFONTWIDTH, true);
+      refreshNumber(settings->brewMillis / 1000, settings->brewMillis / 1000 + 1, 2, 5.5, 5.25, 
+          REGULARFONTWIDTH, true);
   } else if (touchInCircle(p, 8, 5.625, 16)) {
       settings->brewMillis = settings->brewMillis + 1000;
-      refreshNumber(settings->brewMillis / 1000, settings->brewMillis / 1000 - 1, 2, 5.5, 5.25, REGULARFONTWIDTH, true);
+      refreshNumber(settings->brewMillis / 1000, settings->brewMillis / 1000 - 1, 2, 5.5, 5.25, 
+          REGULARFONTWIDTH, true);
   } else if (touchInCircle(p, 4.5, 8.375, 16)) {
       settings->preInfMillis = settings->preInfMillis - 1000;
-      refreshNumber(settings->preInfMillis / 1000, settings->preInfMillis / 1000 + 1, 2, 5.5, 8, REGULARFONTWIDTH, true);
+      refreshNumber(settings->preInfMillis / 1000, settings->preInfMillis / 1000 + 1, 2, 5.5, 8, 
+          REGULARFONTWIDTH, true);
   } else if (touchInCircle(p, 8, 8.375, 16)) {
       settings->preInfMillis = settings->preInfMillis + 1000;
-      refreshNumber(settings->preInfMillis / 1000, settings->preInfMillis / 1000 - 1, 2, 5.5, 8, REGULARFONTWIDTH, true);
+      refreshNumber(settings->preInfMillis / 1000, settings->preInfMillis / 1000 - 1, 2, 5.5, 8, 
+          REGULARFONTWIDTH, true);
   } else if (touchInCircle(p, 4.5, 9.125, 16)) {
       settings->waitMillis = settings->waitMillis - 1000;
-      refreshNumber(settings->waitMillis / 1000, settings->waitMillis / 1000 + 1, 2, 5.5, 9.125, REGULARFONTWIDTH, true);
+      refreshNumber(settings->waitMillis / 1000, settings->waitMillis / 1000 + 1, 2, 5.5, 9.125, 
+          REGULARFONTWIDTH, true);
   } else if (touchInCircle(p, 8, 9.125, 16)) {
       settings->waitMillis = settings->waitMillis + 1000;
-      refreshNumber(settings->waitMillis / 1000, settings->waitMillis / 1000 - 1, 2, 5.5, 9.125, REGULARFONTWIDTH, true);
+      refreshNumber(settings->waitMillis / 1000, settings->waitMillis / 1000 - 1, 2, 5.5, 9.125, 
+          REGULARFONTWIDTH, true);
   } else if (touchInCircle(p, 4.5, 10.625, 16)) {
       settings->preInfBrewMillis = settings->preInfBrewMillis - 1000;
-      refreshNumber(settings->preInfBrewMillis / 1000, settings->preInfBrewMillis / 1000 + 1, 2, 5.5, 10.25, REGULARFONTWIDTH, true);
+      refreshNumber(settings->preInfBrewMillis / 1000, settings->preInfBrewMillis / 1000 + 1, 2, 5.5, 10.25, 
+          REGULARFONTWIDTH, true);
   } else if (touchInCircle(p, 8, 10.625, 16)) {
       settings->preInfBrewMillis = settings->preInfBrewMillis + 1000;
-      refreshNumber(settings->preInfBrewMillis / 1000, settings->preInfBrewMillis / 1000 - 1, 2, 5.5, 10.25, REGULARFONTWIDTH, true);
+      refreshNumber(settings->preInfBrewMillis / 1000, settings->preInfBrewMillis / 1000 - 1, 2, 5.5, 10.25, 
+          REGULARFONTWIDTH, true);
   } else if (touchInButton(p, 5, 13, 4.5, 1.5)) {
       drawHomeScreen();
   } else if (touchInButton(p, 0.5, 13, 4.5, 1.5)) {
       drawSettingsHome();
   }
 }
+
+// Manage touch on brewing screen
 void handleBrewingTouch(TSPoint p) {
   if (touchInCircle(p, 5, 13.25, 1.5*32)) {
     Serial.println("Ending brew");
     endBrew();
   }
 }
+
+// Check to see if a touch is located on a given button
 bool touchInButton(TSPoint p, float xCoord, float yCoord, float width, float height) {
   float touchX = 10 -(p.y / 32.0 - 3.5) * (10.0 / 25.1);
   float touchY = (p.x / 32.0 - 2.3) * (15.0 / 26.65);
@@ -177,6 +185,8 @@ bool touchInButton(TSPoint p, float xCoord, float yCoord, float width, float hei
   return (touchX >= xCoord && touchX <= xCoord + width &&
         touchY >= yCoord && touchY <= yCoord + height); 
 }
+
+// Check to see if touch is located on circle
 bool touchInCircle(TSPoint p, float xCoord, float yCoord, int radius) {
   return touchInButton(p, xCoord - radius / 32.0, yCoord - radius / 32.0,
                        2 * radius / 32.0, 2 * radius / 32.0);

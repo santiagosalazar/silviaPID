@@ -1,8 +1,9 @@
 #ifndef BREWCONTROL_h
 #define BREWCONTROL_h
 
-#include </home/santiago/Arduino/silviaPID/screen.h>
+#include "screen.h"
 
+// Keeps track of current brew mode
 struct brewState {
     bool isBrewing;
     bool modeRegBrew;
@@ -11,11 +12,13 @@ struct brewState {
 };
 brewState *currState;
 
+// Function Declarations
 void brewOn();
 void brewOff();
 void startBrew();
 void endBrew();
 
+// initialize brew state struct
 void initBrewState(brewState *iniState){
     iniState->isBrewing = false;
     iniState->modeRegBrew = false;

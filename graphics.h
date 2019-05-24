@@ -4,8 +4,6 @@
 #include <MCUFRIEND_kbv.h>
 #include <Fonts/FreeMonoBold18pt7b.h>
 #include <Fonts/FreeMonoBold24pt7b.h>
-#include <Adafruit_GFX.h>
-#include <Adafruit_TFTLCD.h>
 
 // Touch screen declarations
 #define YP A2
@@ -40,8 +38,10 @@
 // Kuman LCD TFT library
 MCUFRIEND_kbv tft; 
 
+// FUNCTION DEFINITIONS
+
 // x, y coordinates, width, height are given as coordinates for a 10x15 grid for screen,
-// thickness is given in pixels
+// thickness is given in pixels. 
 void drawCorner(float xCoord, float yCoord, int radius, float thickness, int orientation) {
   int xCentre1;
   int yCentre1;
@@ -91,6 +91,8 @@ void drawCorner(float xCoord, float yCoord, int radius, float thickness, int ori
       break;
   }
 }
+
+// Clear a button by overwriting with background colour
 void clearButton(float xCoord, float yCoord, float width, float height, 
                      int radius, int thickness, char buttonText[], int charWidth,
                      int textLength){
@@ -130,7 +132,7 @@ void drawRoundButton(float xCoord, float yCoord, float width, float height,
   tft.print(buttonText);
 }
 
-
+// Displays top text such as Silvia PID
 void titleText(char* title, int titleLen) {
   tft.setTextSize(1);
   tft.setTextColor(TEXTONE);
@@ -139,13 +141,18 @@ void titleText(char* title, int titleLen) {
   tft.setFont(&REGULARFONT);
 }
 
+// Clear title text
+void clearTitle(char* title, int titleLen) {
+    tft.setTextSize(1);
+    tft.setFont(&TITLEFONT);
+    clearButton(0,0,10,3,0,0,title, TITLEFONTWIDTH, titleLen);
+}
 
-
+// Draw a rectangular button with inside text
 void drawRectButton(float xCoord, float yCoord, float width, 
                      float height, int thickness, char buttonText[], int charWidth,
                   int textLength) {
   if (thickness != 0) {
-      // draw outer straight lines
       tft.fillRect(32 * xCoord + thickness, 32 * yCoord, 32 * width - 2 * thickness, thickness, BORDER);
       tft.fillRect(32 * xCoord, 32 * yCoord, thickness, 32 * height, BORDER);
       tft.fillRect(32 * xCoord + thickness, 32 * (yCoord + height) + 1 - thickness, 32 * width - 2 * thickness, thickness, BORDER);
@@ -156,6 +163,7 @@ void drawRectButton(float xCoord, float yCoord, float width,
   tft.print(buttonText);
 }
 
+// Draw a circular + button
 void drawPlusButton(float xCoord, float yCoord, int radius) {
   tft.fillCircle(32 * xCoord, 32 * yCoord, radius, BORDER);
   tft.fillRect(32 * xCoord - 0.825 * radius, 32 * yCoord  - 0.125 * radius,
@@ -164,12 +172,14 @@ void drawPlusButton(float xCoord, float yCoord, int radius) {
                0.25 * radius, 1.75 * radius , BACKGROUND);  
 }
 
+// Draw a circular - button
 void drawMinusButton(float xCoord, float yCoord, int radius){ 
   tft.fillCircle(32 * xCoord, 32 * yCoord, radius, BORDER);
   tft.fillRect(32 * xCoord - 0.825 * radius, 32 * yCoord  - 0.125 * radius, 
                1.75 * radius, 0.25 * radius , BACKGROUND);  
 }
 
+// Draw a number with bottom right corner at xCoord yCoord
 void drawNumber(float num, int maxLength, float xCoord, 
                    float yCoord, int charWidth, bool isInt){
   int position = 0;
@@ -198,7 +208,7 @@ void drawNumber(float num, int maxLength, float xCoord,
   }
 }
 
-// Clears oldNum and replaces with newNum, correcting for number of digits
+// Clears oldNum and replaces with newNum
 void refreshNumber(float newNum, float oldNum, int maxLength, float xCoord, 
                    float yCoord, int charWidth, bool isInt){
   tft.setTextColor(BACKGROUND);
